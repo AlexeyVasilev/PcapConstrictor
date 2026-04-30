@@ -16,13 +16,13 @@ namespace {
 std::string usage() {
     return
         "Usage:\n"
-        "  pcap-constrictor constrict <input.pcap> -o <output.pcap> [--stats]\n"
-        "  pcap-constrictor reinflate <input.pcap> -o <output.pcap> [--stats]\n"
-        "  pcap-constrictor restore <input.pcap> -o <output.pcap> [--stats]\n"
+        "  pcap-constrictor constrict <input.pcap> -o <output.pcap> [--config config.ini] [--stats]\n"
+        "  pcap-constrictor reinflate <input.pcap> -o <output.pcap> [--config config.ini] [--stats]\n"
+        "  pcap-constrictor restore <input.pcap> -o <output.pcap> [--config config.ini] [--stats]\n"
         "\n"
         "Current behavior:\n"
         "  constrict performs classic PCAP passthrough.\n"
-        "  reinflate/restore pads truncated packets with 0xAB filler bytes.\n";
+        "  reinflate/restore pads truncated packets with the configured filler byte.\n";
 }
 
 ParseResult parse_options(const int argc, char** argv) {
@@ -69,6 +69,15 @@ ParseResult parse_options(const int argc, char** argv) {
             }
             result.options.output_path = argv[++index];
             saw_output = true;
+            continue;
+        }
+
+        if (arg == "--config") {
+            if (index + 1 >= argc) {
+                result.error = "missing config path after --config";
+                return result;
+            }
+            result.options.config_path = argv[++index];
             continue;
         }
 

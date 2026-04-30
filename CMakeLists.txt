@@ -11,6 +11,7 @@ add_executable(
     pcap-constrictor
     src/main.cpp
     src/cli/Options.cpp
+    src/config/Config.cpp
     src/pcap/ClassicPcapReader.cpp
     src/pcap/ClassicPcapWriter.cpp
     src/stats/Stats.cpp
@@ -34,4 +35,3 @@ if(MSVC)
 else()
     target_compile_options(pcap-constrictor PRIVATE -Wall -Wextra -Wpedantic)
 endif()
-

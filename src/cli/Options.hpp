@@ -1,6 +1,7 @@
 #pragma once
 
 #include <filesystem>
+#include <optional>
 #include <string>
 
 namespace pc::cli {
@@ -14,6 +15,7 @@ struct Options {
     Command command {Command::constrict};
     std::filesystem::path input_path {};
     std::filesystem::path output_path {};
+    std::optional<std::filesystem::path> config_path {};
     bool print_stats {false};
 };
 

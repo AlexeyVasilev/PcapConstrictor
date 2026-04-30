@@ -4,13 +4,12 @@
 #include <system_error>
 
 #include "cli/Options.hpp"
+#include "config/Config.hpp"
 #include "pcap/ClassicPcapReader.hpp"
 #include "pcap/ClassicPcapWriter.hpp"
 #include "stats/Stats.hpp"
 
 namespace {
-
-constexpr std::uint8_t kReinflateFillerByte = 0xABU;
 
 [[nodiscard]] bool same_existing_file(const std::filesystem::path& left, const std::filesystem::path& right) {
     std::error_code error {};
@@ -27,13 +26,17 @@ constexpr std::uint8_t kReinflateFillerByte = 0xABU;
     return std::filesystem::equivalent(left, right, error) && !error;
 }
 
-void reinflate_packet(pc::pcap::PacketRecord& packet, pc::stats::Stats& stats) {
+void reinflate_packet(
+    pc::pcap::PacketRecord& packet,
+    pc::stats::Stats& stats,
+    const pc::config::Config& config
+) {
     if (packet.captured_length == packet.original_length) {
         return;
     }
 
     const auto filler_bytes = static_cast<std::uint64_t>(packet.original_length - packet.captured_length);
-    packet.bytes.resize(packet.original_length, kReinflateFillerByte);
+    packet.bytes.resize(packet.original_length, config.reinflate.fill_byte);
     packet.captured_length = packet.original_length;
 
     ++stats.packets_reinflated;
@@ -49,7 +52,7 @@ void apply_constrict_decision(pc::pcap::PacketRecord& packet, pc::stats::Stats& 
     // Future TLS/QUIC truncation decisions belong after this guard.
 }
 
-[[nodiscard]] int run_capture_command(const pc::cli::Options& options) {
+[[nodiscard]] int run_capture_command(const pc::cli::Options& options, const pc::config::Config& config) {
     if (same_existing_file(options.input_path, options.output_path)) {
         std::cerr << "error: input and output paths refer to the same file\n";
         return 1;
@@ -74,7 +77,7 @@ void apply_constrict_decision(pc::pcap::PacketRecord& packet, pc::stats::Stats& 
         stats.total_original_bytes_read += packet->original_length;
 
         if (options.command == pc::cli::Command::reinflate) {
-            reinflate_packet(*packet, stats);
+            reinflate_packet(*packet, stats, config);
         } else {
             apply_constrict_decision(*packet, stats);
         }
@@ -122,5 +125,15 @@ int main(const int argc, char** argv) {
         return 1;
     }
 
-    return run_capture_command(parsed.options);
+    pc::config::Config config {};
+    if (parsed.options.config_path.has_value()) {
+        const auto loaded = pc::config::load_config_file(*parsed.options.config_path);
+        if (!loaded.ok) {
+            std::cerr << "error: " << loaded.error << '\n';
+            return 1;
+        }
+        config = loaded.config;
+    }
+
+    return run_capture_command(parsed.options, config);
 }
