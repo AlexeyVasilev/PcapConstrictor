@@ -22,6 +22,8 @@ In `constrict` mode, packets that are already truncated on input are kept unchan
 
 `reinflate` and its alias `restore` pad packets whose captured length is smaller than their original length. Missing captured bytes are filled with the configured reinflate fill byte, which defaults to `0xAB`. The packet record captured length is set to the original length, and the original length is left unchanged. This does not recover original encrypted bytes, recompute checksums, or modify protocol headers.
 
+PcapConstrictor now has internal packet decoding for Ethernet, VLAN, IPv4, IPv6, TCP, and UDP offsets. This is plumbing for future suffix-only TLS and QUIC truncation; TLS/QUIC parsing and truncation are not implemented yet.
+
 ## Configuration
 
 Defaults are used when `--config` is omitted. A config file can override the currently supported keys with a simple INI-like format:
@@ -48,6 +50,7 @@ Supported now:
 
 - classic PCAP passthrough
 - classic PCAP reinflate / restore with configurable filler byte
+- internal Ethernet/VLAN/IPv4/IPv6/TCP/UDP offset decoding
 - little-endian and big-endian PCAP
 - microsecond and nanosecond timestamp precision
 - sequential processing without loading the whole capture into memory

@@ -1,10 +1,12 @@
 #include <cstdint>
 #include <filesystem>
 #include <iostream>
+#include <span>
 #include <system_error>
 
 #include "cli/Options.hpp"
 #include "config/Config.hpp"
+#include "decode/PacketDecode.hpp"
 #include "pcap/ClassicPcapReader.hpp"
 #include "pcap/ClassicPcapWriter.hpp"
 #include "stats/Stats.hpp"
@@ -43,11 +45,39 @@ void reinflate_packet(
     stats.filler_bytes_written += filler_bytes;
 }
 
-void apply_constrict_decision(pc::pcap::PacketRecord& packet, pc::stats::Stats& stats) {
+void record_decode_stats(const pc::decode::PacketDecodeResult& decoded, pc::stats::Stats& stats) {
+    if (decoded.unsupported_link_type) {
+        ++stats.unsupported_link_type_packets;
+        return;
+    }
+
+    if (decoded.malformed) {
+        ++stats.malformed_packets;
+        return;
+    }
+
+    if (decoded.transport == pc::decode::TransportProtocol::Tcp) {
+        ++stats.decoded_tcp_packets;
+    } else if (decoded.transport == pc::decode::TransportProtocol::Udp) {
+        ++stats.decoded_udp_packets;
+    }
+}
+
+void apply_constrict_decision(
+    pc::pcap::PacketRecord& packet,
+    pc::stats::Stats& stats,
+    const std::uint32_t link_type
+) {
     if (packet.captured_length < packet.original_length) {
         ++stats.already_truncated_input_packets;
         return;
     }
+
+    const auto decoded = pc::decode::decode_packet(
+        link_type,
+        std::span<const std::uint8_t>(packet.bytes.data(), packet.bytes.size())
+    );
+    record_decode_stats(decoded, stats);
 
     // Future TLS/QUIC truncation decisions belong after this guard.
 }
@@ -79,7 +109,7 @@ void apply_constrict_decision(pc::pcap::PacketRecord& packet, pc::stats::Stats& 
         if (options.command == pc::cli::Command::reinflate) {
             reinflate_packet(*packet, stats, config);
         } else {
-            apply_constrict_decision(*packet, stats);
+            apply_constrict_decision(*packet, stats, reader.global_header().link_type);
         }
 
         if (!writer.write_packet(*packet)) {

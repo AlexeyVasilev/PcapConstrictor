@@ -12,6 +12,7 @@ add_executable(
     src/main.cpp
     src/cli/Options.cpp
     src/config/Config.cpp
+    src/decode/PacketDecode.cpp
     src/pcap/ClassicPcapReader.cpp
     src/pcap/ClassicPcapWriter.cpp
     src/stats/Stats.cpp
