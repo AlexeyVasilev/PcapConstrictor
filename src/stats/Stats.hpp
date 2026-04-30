@@ -20,6 +20,9 @@ struct Stats {
     std::uint64_t decoded_udp_packets {0};
     std::uint64_t malformed_packets {0};
     std::uint64_t unsupported_link_type_packets {0};
+    std::uint64_t tls_packets_truncated {0};
+    std::uint64_t tls_bytes_saved {0};
+    std::uint64_t tls_packets_kept_uncertain {0};
 };
 
 void print_stats(std::ostream& out, const Stats& stats, const pc::pcap::ClassicPcapGlobalHeader& header);

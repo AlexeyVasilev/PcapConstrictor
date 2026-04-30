@@ -16,6 +16,8 @@ enum class TransportProtocol {
 struct IpAddress {
     std::array<std::uint8_t, 16> bytes {};
     std::uint8_t length {0};
+
+    [[nodiscard]] bool operator==(const IpAddress& other) const noexcept = default;
 };
 
 struct PacketDecodeResult {

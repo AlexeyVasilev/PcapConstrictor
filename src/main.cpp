@@ -10,6 +10,7 @@
 #include "pcap/ClassicPcapReader.hpp"
 #include "pcap/ClassicPcapWriter.hpp"
 #include "stats/Stats.hpp"
+#include "tls/TlsConstrictor.hpp"
 
 namespace {
 
@@ -66,7 +67,9 @@ void record_decode_stats(const pc::decode::PacketDecodeResult& decoded, pc::stat
 void apply_constrict_decision(
     pc::pcap::PacketRecord& packet,
     pc::stats::Stats& stats,
-    const std::uint32_t link_type
+    const std::uint32_t link_type,
+    pc::tls::TlsConstrictor& tls_constrictor,
+    const pc::config::Config& config
 ) {
     if (packet.captured_length < packet.original_length) {
         ++stats.already_truncated_input_packets;
@@ -78,8 +81,9 @@ void apply_constrict_decision(
         std::span<const std::uint8_t>(packet.bytes.data(), packet.bytes.size())
     );
     record_decode_stats(decoded, stats);
+    tls_constrictor.process_tcp_packet(packet, decoded, config, stats);
 
-    // Future TLS/QUIC truncation decisions belong after this guard.
+    // Future QUIC truncation decisions belong after this guard.
 }
 
 [[nodiscard]] int run_capture_command(const pc::cli::Options& options, const pc::config::Config& config) {
@@ -101,6 +105,7 @@ void apply_constrict_decision(
     }
 
     pc::stats::Stats stats {};
+    pc::tls::TlsConstrictor tls_constrictor {};
 
     while (auto packet = reader.read_next()) {
         stats.total_captured_bytes_read += packet->captured_length;
@@ -109,7 +114,7 @@ void apply_constrict_decision(
         if (options.command == pc::cli::Command::reinflate) {
             reinflate_packet(*packet, stats, config);
         } else {
-            apply_constrict_decision(*packet, stats, reader.global_header().link_type);
+            apply_constrict_decision(*packet, stats, reader.global_header().link_type, tls_constrictor, config);
         }
 
         if (!writer.write_packet(*packet)) {

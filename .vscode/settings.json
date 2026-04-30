@@ -1,0 +1,11 @@
+{
+    "chat.tools.terminal.autoApprove": {
+        ".\\build\\pcap-constrictor-tests.exe": true,
+        ".\\build\\pcap-constrictor.exe": true
+    },
+    "cmake.useCMakePresets": "always",
+    "cmake.configurePreset": "default",
+    "cmake.buildPreset": "default",
+    "cmake.testPreset": "default",
+    "cmake.buildDirectory": "${workspaceFolder}/build"
+}

@@ -4,7 +4,7 @@ PcapConstrictor is a C++20 command-line tool for reducing packet capture files w
 
 The current implementation is intentionally small: it supports classic PCAP passthrough and reinflate mode. The `constrict` command reads a classic PCAP file sequentially and writes a classic PCAP file sequentially without changing packet bytes or packet record metadata.
 
-Future phases are planned to add packet parsing, TLS constriction, and QUIC constriction. PcapConstrictor does not decrypt TLS or QUIC, does not extract secrets, and does not capture unauthorized traffic.
+Future phases are planned to add broader packet parsing and QUIC constriction. PcapConstrictor does not decrypt TLS or QUIC, does not extract secrets, and does not capture unauthorized traffic.
 
 Classic PCAP stores both a captured length and an original length for each packet. That length model is what will later allow PcapConstrictor to perform conservative suffix-only truncation: the captured length can shrink while the original wire length is preserved.
 
@@ -22,7 +22,9 @@ In `constrict` mode, packets that are already truncated on input are kept unchan
 
 `reinflate` and its alias `restore` pad packets whose captured length is smaller than their original length. Missing captured bytes are filled with the configured reinflate fill byte, which defaults to `0xAB`. The packet record captured length is set to the original length, and the original length is left unchanged. This does not recover original encrypted bytes, recompute checksums, or modify protocol headers.
 
-PcapConstrictor now has internal packet decoding for Ethernet, VLAN, IPv4, IPv6, TCP, and UDP offsets. This is plumbing for future suffix-only TLS and QUIC truncation; TLS/QUIC parsing and truncation are not implemented yet.
+PcapConstrictor now has internal packet decoding for Ethernet, VLAN, IPv4, IPv6, TCP, and UDP offsets. This is plumbing for suffix-only TLS constriction and future QUIC constriction.
+
+TLS Application Data constriction is implemented for conservative in-order TCP streams. Packets that are uncertain, out of order, retransmitted, malformed, or already truncated on input are kept full.
 
 ## Configuration
 
@@ -51,14 +53,21 @@ Supported now:
 - classic PCAP passthrough
 - classic PCAP reinflate / restore with configurable filler byte
 - internal Ethernet/VLAN/IPv4/IPv6/TCP/UDP offset decoding
+- conservative TLS Application Data constriction for in-order TCP streams
 - little-endian and big-endian PCAP
 - microsecond and nanosecond timestamp precision
 - sequential processing without loading the whole capture into memory
 
 Not implemented yet:
 
-- packet parsing
-- TLS parsing or truncation
 - QUIC parsing or truncation
 - PCAPNG
 - live capture or eBPF
+
+## Tests
+
+The project includes a C++ test executable named `pcap-constrictor-tests`, wired into CTest for fixture-driven checks. The TLS scenario fixture is stored at `tests/fixtures/tls/tls_test_1.pcap`.
+
+```sh
+ctest --test-dir build -R tls_fixture_constrict
+```

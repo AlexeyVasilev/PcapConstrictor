@@ -96,8 +96,8 @@ All packets belong to the same TCP connection, with one 5-tuple and its reverse 
 #5 B -> A TCP ACK, payload = 0
 #6 B -> A TCP ACK, payload = 0
 
-#7 B -> A TCP payload = 1579
-    TLS Server Hello, length = 1206
+#7 B -> A TCP payload = 2800
+    TLS Server Hello, record length = 1210
     TLS Change Cipher Spec, length = 1
     TLS Application Data #1 partial, length = 9089
 
@@ -144,11 +144,13 @@ So the whole TCP payload is exactly one TLS ClientHello record. The implementati
 Packet #7 contains the start of a large TLS Application Data record after visible non-Application-Data records:
 
 ```text
-Server Hello total bytes       = 5 + 1206 = 1211
+Server Hello TLS record length field = 1210
+  (= 1 byte handshake type + 3 bytes handshake length + 1206 bytes ServerHello data)
+Server Hello total bytes       = 5 + 1210 = 1215
 Change Cipher Spec total bytes = 5 + 1    = 6
-Bytes before AppData #1        = 1217
-Packet #7 payload bytes        = 1579
-Visible AppData #1 bytes in #7 = 1579 - 1217 = 362
+Bytes before AppData #1        = 1221
+Packet #7 payload bytes        = 2800
+Visible AppData #1 bytes in #7 = 2800 - 1221 = 1579
 ```
 
 TLS Application Data #1 total size is:
@@ -175,11 +177,11 @@ Packet #7 can be truncated after preserving ServerHello, Change Cipher Spec, and
 
 ```text
 Packet #7 output TCP payload:
-  TLS Server Hello full:        1211 bytes
+  TLS Server Hello full:        1215 bytes
   TLS Change Cipher Spec full:  6 bytes
   TLS AppData #1 prefix:        8 bytes
 
-Expected output TCP payload = 1211 + 6 + 8 = 1225 bytes
+Expected output TCP payload = 1215 + 6 + 8 = 1229 bytes
 ```
 
 Packets #8, #9, and #10 are continuations of the already identified TLS Application Data #1 record. Because the active TLS record is known to be constrictible and no later TLS record boundary is visible inside these packets, each packet may be truncated to the configured continuation prefix:
@@ -255,7 +257,7 @@ Expected output TCP payload = 429 + 150 + 149 + 149 + 140 + 8 = 1025 bytes
 #4  keep full, TCP payload output = 1900
 #5  keep full, TCP payload output = 0
 #6  keep full, TCP payload output = 0
-#7  constrict, TCP payload output = 1225
+#7  constrict, TCP payload output = 1229
 #8  constrict, TCP payload output = 8
 #9  constrict, TCP payload output = 8
 #10 constrict, TCP payload output = 8
@@ -271,7 +273,7 @@ Expected output TCP payload = 429 + 150 + 149 + 149 + 140 + 8 = 1025 bytes
 ## 7. Expected saved TCP payload bytes
 
 ```text
-#7:  1579 - 1225 = 354 bytes saved
+#7:  2800 - 1229 = 1571 bytes saved
 #8:  2800 - 8    = 2792 bytes saved
 #9:  2800 - 8    = 2792 bytes saved
 #10: 1915 - 8    = 1907 bytes saved
@@ -283,7 +285,7 @@ Expected output TCP payload = 429 + 150 + 149 + 149 + 140 + 8 = 1025 bytes
 Total saved TCP payload bytes in the listed packets:
 
 ```text
-354 + 2792 + 2792 + 1907 + 50 + 84 + 140 = 8119 bytes
+1571 + 2792 + 2792 + 1907 + 50 + 84 + 140 = 9336 bytes
 ```
 
 The actual saved captured bytes at the PCAP record level should equal the TCP payload savings when the transport payload suffix is truncated and lower-layer headers are preserved unchanged.
