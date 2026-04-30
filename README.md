@@ -18,6 +18,8 @@ pcap-constrictor restore input.pcap -o output.pcap --stats
 
 Current `--stats` output includes packet and byte totals, time precision, endianness, link type, and snaplen.
 
+In `constrict` mode, packets that are already truncated on input are kept unchanged. This avoids losing information because classic PCAP stores only the current captured length and original length, not any previous captured length.
+
 `reinflate` and its alias `restore` pad packets whose captured length is smaller than their original length. Missing captured bytes are filled with `0xAB`, the packet record captured length is set to the original length, and the original length is left unchanged. This does not recover original encrypted bytes, recompute checksums, or modify protocol headers.
 
 ## Current Scope

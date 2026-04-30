@@ -40,6 +40,15 @@ void reinflate_packet(pc::pcap::PacketRecord& packet, pc::stats::Stats& stats) {
     stats.filler_bytes_written += filler_bytes;
 }
 
+void apply_constrict_decision(pc::pcap::PacketRecord& packet, pc::stats::Stats& stats) {
+    if (packet.captured_length < packet.original_length) {
+        ++stats.already_truncated_input_packets;
+        return;
+    }
+
+    // Future TLS/QUIC truncation decisions belong after this guard.
+}
+
 [[nodiscard]] int run_capture_command(const pc::cli::Options& options) {
     if (same_existing_file(options.input_path, options.output_path)) {
         std::cerr << "error: input and output paths refer to the same file\n";
@@ -66,6 +75,8 @@ void reinflate_packet(pc::pcap::PacketRecord& packet, pc::stats::Stats& stats) {
 
         if (options.command == pc::cli::Command::reinflate) {
             reinflate_packet(*packet, stats);
+        } else {
+            apply_constrict_decision(*packet, stats);
         }
 
         if (!writer.write_packet(*packet)) {
