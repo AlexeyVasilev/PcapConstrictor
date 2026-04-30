@@ -17,9 +17,12 @@ std::string usage() {
     return
         "Usage:\n"
         "  pcap-constrictor constrict <input.pcap> -o <output.pcap> [--stats]\n"
+        "  pcap-constrictor reinflate <input.pcap> -o <output.pcap> [--stats]\n"
+        "  pcap-constrictor restore <input.pcap> -o <output.pcap> [--stats]\n"
         "\n"
         "Current behavior:\n"
-        "  constrict performs classic PCAP passthrough in this initial version.\n";
+        "  constrict performs classic PCAP passthrough.\n"
+        "  reinflate/restore pads truncated packets with 0xAB filler bytes.\n";
 }
 
 ParseResult parse_options(const int argc, char** argv) {
@@ -38,7 +41,11 @@ ParseResult parse_options(const int argc, char** argv) {
     }
 
     const std::string_view command = argv[1];
-    if (command != "constrict") {
+    if (command == "constrict") {
+        result.options.command = Command::constrict;
+    } else if (command == "reinflate" || command == "restore") {
+        result.options.command = Command::reinflate;
+    } else {
         result.error = "unsupported command: ";
         result.error += command;
         return result;
@@ -96,4 +103,3 @@ ParseResult parse_options(const int argc, char** argv) {
 }
 
 }  // namespace pc::cli
-

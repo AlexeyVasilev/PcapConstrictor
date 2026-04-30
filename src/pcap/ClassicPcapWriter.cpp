@@ -104,15 +104,6 @@ bool ClassicPcapWriter::write_packet(const PacketRecord& packet) {
         return false;
     }
 
-    if (packet.captured_length > header_.snaplen) {
-        std::ostringstream out {};
-        out << "packet " << packet.packet_index
-            << ": captured length " << packet.captured_length
-            << " exceeds global snaplen " << header_.snaplen;
-        set_error(out.str());
-        return false;
-    }
-
     const auto packet_header = make_packet_header_bytes(packet, header_.endianness);
     if (!write_all(stream_, packet_header)) {
         set_error("failed to write packet header");

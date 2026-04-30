@@ -1,3 +1,4 @@
+#include <cstdint>
 #include <filesystem>
 #include <iostream>
 #include <system_error>
@@ -8,6 +9,8 @@
 #include "stats/Stats.hpp"
 
 namespace {
+
+constexpr std::uint8_t kReinflateFillerByte = 0xABU;
 
 [[nodiscard]] bool same_existing_file(const std::filesystem::path& left, const std::filesystem::path& right) {
     std::error_code error {};
@@ -24,7 +27,20 @@ namespace {
     return std::filesystem::equivalent(left, right, error) && !error;
 }
 
-[[nodiscard]] int run_constrict(const pc::cli::Options& options) {
+void reinflate_packet(pc::pcap::PacketRecord& packet, pc::stats::Stats& stats) {
+    if (packet.captured_length == packet.original_length) {
+        return;
+    }
+
+    const auto filler_bytes = static_cast<std::uint64_t>(packet.original_length - packet.captured_length);
+    packet.bytes.resize(packet.original_length, kReinflateFillerByte);
+    packet.captured_length = packet.original_length;
+
+    ++stats.packets_reinflated;
+    stats.filler_bytes_written += filler_bytes;
+}
+
+[[nodiscard]] int run_capture_command(const pc::cli::Options& options) {
     if (same_existing_file(options.input_path, options.output_path)) {
         std::cerr << "error: input and output paths refer to the same file\n";
         return 1;
@@ -47,6 +63,10 @@ namespace {
     while (auto packet = reader.read_next()) {
         stats.total_captured_bytes_read += packet->captured_length;
         stats.total_original_bytes_read += packet->original_length;
+
+        if (options.command == pc::cli::Command::reinflate) {
+            reinflate_packet(*packet, stats);
+        }
 
         if (!writer.write_packet(*packet)) {
             std::cerr << "error: " << writer.error_message() << '\n';
@@ -91,5 +111,5 @@ int main(const int argc, char** argv) {
         return 1;
     }
 
-    return run_constrict(parsed.options);
+    return run_capture_command(parsed.options);
 }

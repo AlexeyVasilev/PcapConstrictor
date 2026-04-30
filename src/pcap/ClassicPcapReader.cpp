@@ -188,15 +188,6 @@ std::optional<PacketRecord> ClassicPcapReader::read_next() {
         return std::nullopt;
     }
 
-    if (captured_length > global_header_.snaplen) {
-        std::ostringstream out {};
-        out << packet_error_prefix(next_packet_index_, packet_header_offset)
-            << "captured length " << captured_length
-            << " exceeds global snaplen " << global_header_.snaplen;
-        set_error(out.str());
-        return std::nullopt;
-    }
-
     const auto data_offset = packet_header_offset + kClassicPcapPacketHeaderSize;
     const auto remaining_data = file_size_ - data_offset;
     if (static_cast<std::uint64_t>(captured_length) > remaining_data) {
