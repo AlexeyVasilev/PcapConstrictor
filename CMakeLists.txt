@@ -15,6 +15,7 @@ add_executable(
     src/decode/PacketDecode.cpp
     src/pcap/ClassicPcapReader.cpp
     src/pcap/ClassicPcapWriter.cpp
+    src/quic/QuicConstrictor.cpp
     src/stats/Stats.cpp
     src/tls/TlsConstrictor.cpp
 )
@@ -46,7 +47,10 @@ if(BUILD_TESTING)
 
     add_executable(
         pcap-constrictor-tests
+        tests/TestMain.cpp
+        tests/TestHelpers.cpp
         tests/TlsFixtureTest.cpp
+        tests/QuicFixtureTest.cpp
         src/decode/PacketDecode.cpp
         src/pcap/ClassicPcapReader.cpp
     )
@@ -62,6 +66,7 @@ if(BUILD_TESTING)
         pcap-constrictor-tests
         PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/src
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests
     )
     target_compile_definitions(
         pcap-constrictor-tests

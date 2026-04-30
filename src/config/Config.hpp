@@ -18,6 +18,7 @@ struct TlsConfig {
 struct QuicConfig {
     std::uint32_t short_header_keep_packet_bytes {32};
     bool require_dcid_match {true};
+    bool allow_short_header_without_known_dcid {false};
 };
 
 struct ReinflateConfig {

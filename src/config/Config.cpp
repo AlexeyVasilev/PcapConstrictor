@@ -149,6 +149,14 @@ namespace {
             }
             return true;
         }
+
+        if (key == "allow_short_header_without_known_dcid") {
+            if (!parse_bool(value, config.quic.allow_short_header_without_known_dcid)) {
+                error = "invalid value for quic.allow_short_header_without_known_dcid; expected true or false";
+                return false;
+            }
+            return true;
+        }
     } else if (section == "reinflate") {
         if (key == "fill_byte") {
             if (!parse_byte(value, config.reinflate.fill_byte)) {

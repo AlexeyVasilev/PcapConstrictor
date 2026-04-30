@@ -23,6 +23,10 @@ struct Stats {
     std::uint64_t tls_packets_truncated {0};
     std::uint64_t tls_bytes_saved {0};
     std::uint64_t tls_packets_kept_uncertain {0};
+    std::uint64_t quic_packets_truncated {0};
+    std::uint64_t quic_bytes_saved {0};
+    std::uint64_t quic_packets_kept_uncertain {0};
+    std::uint64_t quic_packets_kept_dcid_mismatch {0};
 };
 
 void print_stats(std::ostream& out, const Stats& stats, const pc::pcap::ClassicPcapGlobalHeader& header);

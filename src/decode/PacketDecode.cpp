@@ -142,11 +142,8 @@ void decode_udp(
         return;
     }
 
-    const auto udp_end = transport_offset + static_cast<std::size_t>(udp_length);
-    if (udp_end > transport_end || udp_end > packet.size()) {
-        result.malformed = true;
-        return;
-    }
+    const auto raw_udp_end = transport_offset + static_cast<std::size_t>(udp_length);
+    const auto udp_end = std::min(raw_udp_end, transport_end);
 
     result.decoded = true;
     result.transport = TransportProtocol::Udp;
