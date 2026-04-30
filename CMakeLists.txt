@@ -41,6 +41,9 @@ endif()
 include(CTest)
 
 if(BUILD_TESTING)
+    file(TO_CMAKE_PATH "${CMAKE_CURRENT_SOURCE_DIR}" PCAP_CONSTRICTOR_SOURCE_DIR_FOR_DEFINE)
+    file(TO_CMAKE_PATH "${CMAKE_CURRENT_BINARY_DIR}" PCAP_CONSTRICTOR_BINARY_DIR_FOR_DEFINE)
+
     add_executable(
         pcap-constrictor-tests
         tests/TlsFixtureTest.cpp
@@ -60,6 +63,14 @@ if(BUILD_TESTING)
         PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/src
     )
+    target_compile_definitions(
+        pcap-constrictor-tests
+        PRIVATE
+            PCAP_CONSTRICTOR_SOURCE_DIR="${PCAP_CONSTRICTOR_SOURCE_DIR_FOR_DEFINE}"
+            PCAP_CONSTRICTOR_BINARY_DIR="${PCAP_CONSTRICTOR_BINARY_DIR_FOR_DEFINE}"
+            PCAP_CONSTRICTOR_EXE_PATH="$<TARGET_FILE:pcap-constrictor>"
+    )
+    add_dependencies(pcap-constrictor-tests pcap-constrictor)
 
     if(MSVC)
         target_compile_options(pcap-constrictor-tests PRIVATE /W4 /permissive-)
@@ -68,11 +79,8 @@ if(BUILD_TESTING)
     endif()
 
     add_test(
-        NAME tls_fixture_constrict
+        NAME pcap_constrictor_tests
         COMMAND
             pcap-constrictor-tests
-            --exe $<TARGET_FILE:pcap-constrictor>
-            --fixture ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/tls/tls_test_1.pcap
-            --out ${CMAKE_CURRENT_BINARY_DIR}/test-output/tls_test_1.out.pcap
     )
 endif()

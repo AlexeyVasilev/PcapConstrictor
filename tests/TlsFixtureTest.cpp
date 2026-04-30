@@ -1,11 +1,14 @@
 #include <algorithm>
+#include <cerrno>
 #include <cstdlib>
 #include <cstdint>
 #include <cstring>
 #include <exception>
 #include <filesystem>
 #include <iostream>
+#ifdef _WIN32
 #include <process.h>
+#endif
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -20,7 +23,7 @@
 
 namespace {
 
-struct TestArgs {
+struct TestContext {
     std::filesystem::path executable {};
     std::filesystem::path fixture {};
     std::filesystem::path output {};
@@ -45,6 +48,28 @@ constexpr ExpectedPayload kExpectedPayloads[] {
 constexpr std::size_t kExpectedTruncatedPackets[] {7U, 8U, 9U, 10U, 15U, 16U, 17U};
 constexpr std::size_t kExpectedIdenticalPackets[] {1U, 2U, 3U, 4U, 5U, 6U, 11U, 12U, 13U, 14U};
 
+#ifndef PCAP_CONSTRICTOR_SOURCE_DIR
+#error "PCAP_CONSTRICTOR_SOURCE_DIR must be defined by CMake"
+#endif
+
+#ifndef PCAP_CONSTRICTOR_BINARY_DIR
+#error "PCAP_CONSTRICTOR_BINARY_DIR must be defined by CMake"
+#endif
+
+#ifndef PCAP_CONSTRICTOR_EXE_PATH
+#error "PCAP_CONSTRICTOR_EXE_PATH must be defined by CMake"
+#endif
+
+[[nodiscard]] TestContext make_context() {
+    const std::filesystem::path source_dir {PCAP_CONSTRICTOR_SOURCE_DIR};
+    const std::filesystem::path binary_dir {PCAP_CONSTRICTOR_BINARY_DIR};
+    return {
+        .executable = std::filesystem::path {PCAP_CONSTRICTOR_EXE_PATH},
+        .fixture = source_dir / "tests" / "fixtures" / "tls" / "tls_test_1.pcap",
+        .output = binary_dir / "test-output" / "tls_test_1.out.pcap",
+    };
+}
+
 #ifndef _WIN32
 [[nodiscard]] std::string quote_arg(const std::filesystem::path& path) {
     std::string raw = path.string();
@@ -59,29 +84,6 @@ constexpr std::size_t kExpectedIdenticalPackets[] {1U, 2U, 3U, 4U, 5U, 6U, 11U, 
     return quoted;
 }
 #endif
-
-[[nodiscard]] bool parse_args(const int argc, char** argv, TestArgs& args) {
-    for (int index = 1; index < argc; ++index) {
-        const std::string_view arg = argv[index];
-        if (arg == "--exe" && index + 1 < argc) {
-            args.executable = argv[++index];
-        } else if (arg == "--fixture" && index + 1 < argc) {
-            args.fixture = argv[++index];
-        } else if (arg == "--out" && index + 1 < argc) {
-            args.output = argv[++index];
-        } else {
-            std::cerr << "unknown or incomplete argument: " << arg << '\n';
-            return false;
-        }
-    }
-
-    if (args.executable.empty() || args.fixture.empty() || args.output.empty()) {
-        std::cerr << "usage: pcap-constrictor-tests --exe <pcap-constrictor> --fixture <input.pcap> --out <output.pcap>\n";
-        return false;
-    }
-
-    return true;
-}
 
 [[nodiscard]] std::vector<pc::pcap::PacketRecord> read_packets(const std::filesystem::path& path) {
     pc::pcap::ClassicPcapReader reader {};
@@ -114,12 +116,12 @@ void require(const bool condition, const std::string& message) {
     }
 }
 
-[[nodiscard]] int run_constrict_command(const TestArgs& args) {
+[[nodiscard]] int run_constrict_command(const TestContext& context) {
 #ifdef _WIN32
-    const std::wstring executable = args.executable.wstring();
+    const std::wstring executable = context.executable.wstring();
     const std::wstring command = L"constrict";
-    const std::wstring fixture = args.fixture.wstring();
-    const std::wstring output = args.output.wstring();
+    const std::wstring fixture = context.fixture.wstring();
+    const std::wstring output = context.output.wstring();
     const std::wstring output_flag = L"-o";
     const std::wstring stats_flag = L"--stats";
 
@@ -135,25 +137,26 @@ void require(const bool condition, const std::string& message) {
 
     return _wspawnv(_P_WAIT, executable.c_str(), argv.data());
 #else
-    const auto command = quote_arg(args.executable) +
-        " constrict " + quote_arg(args.fixture) +
-        " -o " + quote_arg(args.output) +
+    const auto command = quote_arg(context.executable) +
+        " constrict " + quote_arg(context.fixture) +
+        " -o " + quote_arg(context.output) +
         " --stats";
     return std::system(command.c_str());
 #endif
 }
 
-void run_tls_fixture_test(const TestArgs& args) {
-    std::filesystem::create_directories(args.output.parent_path());
+void run_tls_fixture_test() {
+    const auto context = make_context();
+    std::filesystem::create_directories(context.output.parent_path());
 
-    const int exit_code = run_constrict_command(args);
+    const int exit_code = run_constrict_command(context);
     if (exit_code == -1) {
         throw std::runtime_error(std::string("failed to spawn pcap-constrictor command: ") + std::strerror(errno));
     }
     require(exit_code == 0, "pcap-constrictor command failed");
 
-    const auto input_packets = read_packets(args.fixture);
-    const auto output_packets = read_packets(args.output);
+    const auto input_packets = read_packets(context.fixture);
+    const auto output_packets = read_packets(context.output);
     require(input_packets.size() == output_packets.size(), "packet count changed");
 
     for (std::size_t index = 0; index < input_packets.size(); ++index) {
@@ -177,7 +180,13 @@ void run_tls_fixture_test(const TestArgs& args) {
 
         const auto decoded = decode_tcp(output_packets[packet_index]);
         require(decoded.decoded && decoded.transport == pc::decode::TransportProtocol::Tcp, "expected decoded TCP packet");
-        require(decoded.transport_payload_size == expected.tcp_payload_size, "unexpected TCP payload size");
+        if (decoded.transport_payload_size != expected.tcp_payload_size) {
+            throw std::runtime_error(
+                "packet #" + std::to_string(expected.packet_index) +
+                ": expected TCP payload " + std::to_string(expected.tcp_payload_size) +
+                ", actual " + std::to_string(decoded.transport_payload_size)
+            );
+        }
 
         const auto input_decoded = decode_tcp(input_packets[packet_index]);
         if (input_decoded.decoded && input_decoded.transport_payload_size != 0U) {
@@ -214,21 +223,40 @@ void run_tls_fixture_test(const TestArgs& args) {
     }
 }
 
+struct TestCase {
+    std::string_view name {};
+    void (*run)() {};
+};
+
+constexpr TestCase kTests[] {
+    {"tls_fixture_constrict", &run_tls_fixture_test},
+};
+
 }  // namespace
 
-int main(const int argc, char** argv) {
-    TestArgs args {};
-    if (!parse_args(argc, argv, args)) {
+int main(const int argc, char**) {
+    if (argc != 1) {
+        std::cerr << "pcap-constrictor-tests does not accept command-line arguments\n";
         return 2;
     }
 
-    try {
-        run_tls_fixture_test(args);
-    } catch (const std::exception& error) {
-        std::cerr << "TLS fixture test failed: " << error.what() << '\n';
+    std::size_t failed = 0;
+    for (const auto& test : kTests) {
+        std::cout << "[ RUN  ] " << test.name << '\n';
+        try {
+            test.run();
+            std::cout << "[ PASS ] " << test.name << '\n';
+        } catch (const std::exception& error) {
+            ++failed;
+            std::cerr << "[ FAIL ] " << test.name << ": " << error.what() << '\n';
+        }
+    }
+
+    if (failed != 0U) {
+        std::cerr << failed << " test(s) failed\n";
         return 1;
     }
 
-    std::cout << "TLS fixture test passed\n";
+    std::cout << "All tests passed\n";
     return 0;
 }

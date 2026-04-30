@@ -69,5 +69,12 @@ Not implemented yet:
 The project includes a C++ test executable named `pcap-constrictor-tests`, wired into CTest for fixture-driven checks. The TLS scenario fixture is stored at `tests/fixtures/tls/tls_test_1.pcap`.
 
 ```sh
-ctest --test-dir build -R tls_fixture_constrict
+cmake --build build
+ctest --test-dir build --output-on-failure
+```
+
+You can also run the standalone test binary directly:
+
+```sh
+.\build\pcap-constrictor-tests.exe
 ```
