@@ -22,7 +22,7 @@ std::string usage() {
         "\n"
         "Current behavior:\n"
         "  constrict performs classic PCAP passthrough.\n"
-        "  reinflate/restore pads truncated packets with the configured filler byte.\n";
+        "  reinflate/restore pads truncated packets and can preserve or recompute checksums via config.\n";
 }
 
 ParseResult parse_options(const int argc, char** argv) {

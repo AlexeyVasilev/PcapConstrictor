@@ -30,6 +30,7 @@ struct TestContext {
     std::filesystem::path executable {};
     std::filesystem::path fixture {};
     std::filesystem::path output {};
+    std::filesystem::path config {};
 };
 
 inline void require(const bool condition, const std::string& message) {
@@ -48,6 +49,7 @@ inline void require(const bool condition, const std::string& message) {
 [[nodiscard]] std::vector<pc::pcap::PacketRecord> read_packets(const std::filesystem::path& path);
 
 [[nodiscard]] int run_constrict_command(const TestContext& context);
+[[nodiscard]] int run_reinflate_command(const TestContext& context);
 
 void verify_common_packet_invariants(
     const std::vector<pc::pcap::PacketRecord>& input_packets,

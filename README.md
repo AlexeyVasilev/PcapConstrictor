@@ -22,7 +22,9 @@ In `constrict` mode, packets that are already truncated on input are kept unchan
 
 `reinflate` and its alias `restore` pad packets whose captured length is smaller than their original length. Missing captured bytes are filled with the configured reinflate fill byte, which defaults to `0xAB`. The packet record captured length is set to the original length, and the original length is left unchanged. This does not recover original encrypted bytes.
 
-By default, reinflate preserves existing packet bytes after padding and does not modify checksum fields. With `checksum_policy = recompute`, reinflate recalculates IPv4 header checksums and TCP/UDP checksums for complete supported Ethernet/VLAN IPv4/IPv6 packets. Unsupported, incomplete, fragmented, or malformed packets keep their existing checksum fields and are reported in stats.
+`checksum_policy = preserve` is the default. It pads missing captured bytes when needed and never changes checksum fields, including checksum-offload partial checksums that were present in the input capture.
+
+`checksum_policy = recompute` pads missing captured bytes when needed and then attempts to recompute checksums for all supported complete IPv4/IPv6 TCP/UDP packets in the output capture. This can change checksum fields even for packets that did not need padding. Unsupported, incomplete, fragmented, or malformed packets keep their existing checksum fields and are reported in stats.
 
 PcapConstrictor now has internal packet decoding for Ethernet, VLAN, IPv4, IPv6, TCP, and UDP offsets. This is plumbing for suffix-only TLS constriction and future QUIC constriction.
 
@@ -50,6 +52,18 @@ allow_short_header_without_known_dcid = false
 [reinflate]
 fill_byte = 0xAB
 checksum_policy = preserve
+```
+
+Supported checksum policy values:
+
+```ini
+[reinflate]
+checksum_policy = preserve
+```
+
+```ini
+[reinflate]
+checksum_policy = recompute
 ```
 
 ## Current Scope

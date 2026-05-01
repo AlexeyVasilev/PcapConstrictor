@@ -146,8 +146,12 @@ Behavior:
 if caplen < orig_len:
     append fill_byte until caplen == orig_len
     set caplen = orig_len
-else:
-    write packet unchanged
+
+if checksum_policy == preserve:
+    keep checksum fields unchanged
+
+if checksum_policy == recompute:
+    attempt checksum recomputation for every supported complete packet in the output capture
 ```
 
 Default fill byte:
@@ -157,6 +161,29 @@ Default fill byte:
 ```
 
 Important: reinflate does not recover original bytes. It only pads missing captured bytes with synthetic filler bytes.
+
+Checksum policies:
+
+```ini
+[reinflate]
+checksum_policy = preserve
+```
+
+- default;
+- pads missing captured bytes when needed;
+- never changes checksum fields;
+- preserves original checksum fields, including checksum-offload partial checksums.
+
+```ini
+[reinflate]
+checksum_policy = recompute
+```
+
+- pads missing captured bytes when needed;
+- then recomputes checksums for all supported complete IPv4/IPv6 TCP/UDP packets in the output capture;
+- may modify checksum fields even for packets that were not padded;
+- can replace checksum-offload partial checksums with normal full checksums;
+- skips unsupported, malformed, fragmented, incomplete, or inconsistent packets and reports skipped recomputations in stats.
 
 ## 8. General safety policy
 
@@ -186,27 +213,22 @@ defaults < config file < command-line options
 
 Initial config shape:
 
-```toml
+```ini
 [general]
 min_saved_bytes_per_packet = 16
-unknown_traffic = "keep"
-warn_on_already_truncated_input = true
 
 [tls]
-enabled = true
 app_data_keep_record_bytes = 8
 app_data_continuation_keep_bytes = 8
-unknown_tls = "keep"
 
 [quic]
-enabled = true
 short_header_keep_packet_bytes = 32
 require_dcid_match = true
 allow_short_header_without_known_dcid = false
-unknown_quic = "keep"
 
 [reinflate]
-fill_byte = "0xAB"
+fill_byte = 0xAB
+checksum_policy = preserve
 ```
 
 Notes:
@@ -215,6 +237,7 @@ Notes:
 - `tls.app_data_keep_record_bytes` must be at least 5.
 - `quic.short_header_keep_packet_bytes` is counted from the beginning of the QUIC packet inside the UDP payload.
 - `min_saved_bytes_per_packet` prevents tiny truncations that do not materially reduce file size.
+- `reinflate.checksum_policy` accepts only `preserve` or `recompute`.
 
 ## 10. Packet decoding requirements
 
@@ -785,5 +808,8 @@ Some tools may display warnings such as packet bytes missing from capture. This 
 
 Reinflate mode can make `caplen == orig_len` again, but the padded bytes are synthetic and not the original encrypted bytes.
 
-In constrict mode, checksums are preserved as originally captured. If a packet is reinflated with synthetic bytes, transport checksums may no longer match the padded payload. This is acceptable for the first version and should be documented.
+In constrict mode, checksums are preserved as originally captured.
 
+In reinflate mode with `checksum_policy = preserve`, synthetic padding may leave existing checksum fields inconsistent with the padded payload. This is expected.
+
+In reinflate mode with `checksum_policy = recompute`, the tool attempts to replace those fields with normal full checksums for all supported complete IPv4/IPv6 TCP/UDP packets in the output capture.

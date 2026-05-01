@@ -37,16 +37,14 @@ void reinflate_packet(
     const pc::config::Config& config,
     const std::uint32_t link_type
 ) {
-    if (packet.captured_length == packet.original_length) {
-        return;
+    if (packet.captured_length < packet.original_length) {
+        const auto filler_bytes = static_cast<std::uint64_t>(packet.original_length - packet.captured_length);
+        packet.bytes.resize(packet.original_length, config.reinflate.fill_byte);
+        packet.captured_length = packet.original_length;
+
+        ++stats.packets_reinflated;
+        stats.filler_bytes_written += filler_bytes;
     }
-
-    const auto filler_bytes = static_cast<std::uint64_t>(packet.original_length - packet.captured_length);
-    packet.bytes.resize(packet.original_length, config.reinflate.fill_byte);
-    packet.captured_length = packet.original_length;
-
-    ++stats.packets_reinflated;
-    stats.filler_bytes_written += filler_bytes;
 
     if (config.reinflate.checksum_policy == pc::config::ChecksumPolicy::recompute) {
         stats.checksum_recompute_requested = true;

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstdlib>
 #include <stdexcept>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -29,6 +30,46 @@ namespace {
 }
 #endif
 
+[[nodiscard]] int run_command(const TestContext& context, const wchar_t* command_wide, const char* command_narrow) {
+#ifdef _WIN32
+    static_cast<void>(command_narrow);
+
+    const std::wstring executable = context.executable.wstring();
+    const std::wstring command_value {command_wide};
+    const std::wstring fixture = context.fixture.wstring();
+    const std::wstring output = context.output.wstring();
+    const std::wstring output_flag = L"-o";
+    const std::wstring stats_flag = L"--stats";
+    const std::wstring config_flag = L"--config";
+    const std::wstring config = context.config.wstring();
+
+    std::vector<const wchar_t*> argv {};
+    argv.reserve(context.config.empty() ? 7U : 9U);
+    argv.push_back(executable.c_str());
+    argv.push_back(command_value.c_str());
+    argv.push_back(fixture.c_str());
+    argv.push_back(output_flag.c_str());
+    argv.push_back(output.c_str());
+    if (!context.config.empty()) {
+        argv.push_back(config_flag.c_str());
+        argv.push_back(config.c_str());
+    }
+    argv.push_back(stats_flag.c_str());
+    argv.push_back(nullptr);
+
+    return _wspawnv(_P_WAIT, executable.c_str(), argv.data());
+#else
+    auto cmd = quote_arg(context.executable) +
+        " " + std::string(command_narrow) + " " + quote_arg(context.fixture) +
+        " -o " + quote_arg(context.output);
+    if (!context.config.empty()) {
+        cmd += " --config " + quote_arg(context.config);
+    }
+    cmd += " --stats";
+    return std::system(cmd.c_str());
+#endif
+}
+
 }  // namespace
 
 std::vector<pc::pcap::PacketRecord> read_packets(const std::filesystem::path& path) {
@@ -50,32 +91,11 @@ std::vector<pc::pcap::PacketRecord> read_packets(const std::filesystem::path& pa
 }
 
 int run_constrict_command(const TestContext& context) {
-#ifdef _WIN32
-    const std::wstring executable = context.executable.wstring();
-    const std::wstring command = L"constrict";
-    const std::wstring fixture = context.fixture.wstring();
-    const std::wstring output = context.output.wstring();
-    const std::wstring output_flag = L"-o";
-    const std::wstring stats_flag = L"--stats";
+    return run_command(context, L"constrict", "constrict");
+}
 
-    std::vector<const wchar_t*> argv {};
-    argv.reserve(7U);
-    argv.push_back(executable.c_str());
-    argv.push_back(command.c_str());
-    argv.push_back(fixture.c_str());
-    argv.push_back(output_flag.c_str());
-    argv.push_back(output.c_str());
-    argv.push_back(stats_flag.c_str());
-    argv.push_back(nullptr);
-
-    return _wspawnv(_P_WAIT, executable.c_str(), argv.data());
-#else
-    const auto cmd = quote_arg(context.executable) +
-        " constrict " + quote_arg(context.fixture) +
-        " -o " + quote_arg(context.output) +
-        " --stats";
-    return std::system(cmd.c_str());
-#endif
+int run_reinflate_command(const TestContext& context) {
+    return run_command(context, L"reinflate", "reinflate");
 }
 
 void verify_common_packet_invariants(
