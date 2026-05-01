@@ -119,10 +119,13 @@ Behavior:
 
 - read input sequentially;
 - analyze each packet independently plus limited per-flow state;
-- optionally reduce captured length using suffix-only truncation;
+- keep packets whose input `caplen < orig_len` unchanged;
+- optionally reduce captured length using suffix-only truncation when a safe decision exists;
 - preserve original packet length;
 - preserve timestamp;
 - preserve packet order;
+- never recompute checksums;
+- never modify IP/TCP/UDP length fields;
 - write output sequentially;
 - do not load the whole file into memory.
 
@@ -171,7 +174,7 @@ checksum_policy = preserve
 
 - default;
 - pads missing captured bytes when needed;
-- never changes checksum fields;
+- does not modify checksum fields;
 - preserves original checksum fields, including checksum-offload partial checksums.
 
 ```ini
@@ -180,9 +183,11 @@ checksum_policy = recompute
 ```
 
 - pads missing captured bytes when needed;
-- then recomputes checksums for all supported complete IPv4/IPv6 TCP/UDP packets in the output capture;
+- then attempts to recompute checksums for every supported complete IPv4/IPv6 TCP/UDP packet in the reinflate output;
 - may modify checksum fields even for packets that were not padded;
 - can replace checksum-offload partial checksums with normal full checksums;
+- recomputes the IPv4 header checksum where applicable;
+- recomputes TCP/UDP checksums where supported;
 - skips unsupported, malformed, fragmented, incomplete, or inconsistent packets and reports skipped recomputations in stats.
 
 ## 8. General safety policy
