@@ -6,6 +6,11 @@
 
 namespace pc::config {
 
+enum class ChecksumPolicy {
+    preserve,
+    recompute,
+};
+
 struct GeneralConfig {
     std::uint32_t min_saved_bytes_per_packet {16};
 };
@@ -23,6 +28,7 @@ struct QuicConfig {
 
 struct ReinflateConfig {
     std::uint8_t fill_byte {0xABU};
+    ChecksumPolicy checksum_policy {ChecksumPolicy::preserve};
 };
 
 struct Config {

@@ -26,6 +26,10 @@ void print_stats(std::ostream& out, const Stats& stats, const pc::pcap::ClassicP
         << "QUIC bytes saved: " << stats.quic_bytes_saved << '\n'
         << "QUIC packets kept uncertain: " << stats.quic_packets_kept_uncertain << '\n'
         << "QUIC packets kept DCID mismatch: " << stats.quic_packets_kept_dcid_mismatch << '\n'
+        << "checksums recomputed IPv4: " << stats.checksums_recomputed_ipv4 << '\n'
+        << "checksums recomputed TCP: " << stats.checksums_recomputed_tcp << '\n'
+        << "checksums recomputed UDP: " << stats.checksums_recomputed_udp << '\n'
+        << "checksum recompute skipped: " << stats.checksum_recompute_skipped << '\n'
         << "time precision: " << pc::pcap::to_string(header.time_precision) << '\n'
         << "endianness: " << pc::bytes::to_string(header.endianness) << '\n'
         << "link type: " << header.link_type << '\n'
@@ -34,6 +38,11 @@ void print_stats(std::ostream& out, const Stats& stats, const pc::pcap::ClassicP
     if (stats.already_truncated_input_packets != 0U) {
         out << "Warning: " << stats.already_truncated_input_packets
             << " input packets were already truncated and were kept unchanged.\n";
+    }
+
+    if (stats.checksum_recompute_requested && stats.checksum_recompute_skipped != 0U) {
+        out << "Warning: checksum recomputation was skipped for " << stats.checksum_recompute_skipped
+            << " packet(s); padded bytes were kept and existing checksum fields were preserved.\n";
     }
 }
 

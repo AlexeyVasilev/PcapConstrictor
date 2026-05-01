@@ -4,6 +4,7 @@
 #include <span>
 #include <system_error>
 
+#include "checksum/Checksum.hpp"
 #include "cli/Options.hpp"
 #include "config/Config.hpp"
 #include "decode/PacketDecode.hpp"
@@ -33,7 +34,8 @@ namespace {
 void reinflate_packet(
     pc::pcap::PacketRecord& packet,
     pc::stats::Stats& stats,
-    const pc::config::Config& config
+    const pc::config::Config& config,
+    const std::uint32_t link_type
 ) {
     if (packet.captured_length == packet.original_length) {
         return;
@@ -45,6 +47,15 @@ void reinflate_packet(
 
     ++stats.packets_reinflated;
     stats.filler_bytes_written += filler_bytes;
+
+    if (config.reinflate.checksum_policy == pc::config::ChecksumPolicy::recompute) {
+        stats.checksum_recompute_requested = true;
+        const auto checksum_result = pc::checksum::recompute_packet_checksums(link_type, packet.bytes);
+        stats.checksums_recomputed_ipv4 += checksum_result.checksums_recomputed_ipv4;
+        stats.checksums_recomputed_tcp += checksum_result.checksums_recomputed_tcp;
+        stats.checksums_recomputed_udp += checksum_result.checksums_recomputed_udp;
+        stats.checksum_recompute_skipped += checksum_result.checksum_recompute_skipped;
+    }
 }
 
 void record_decode_stats(const pc::decode::PacketDecodeResult& decoded, pc::stats::Stats& stats) {
@@ -116,7 +127,7 @@ void apply_constrict_decision(
         stats.total_original_bytes_read += packet->original_length;
 
         if (options.command == pc::cli::Command::reinflate) {
-            reinflate_packet(*packet, stats, config);
+            reinflate_packet(*packet, stats, config, reader.global_header().link_type);
         } else {
             apply_constrict_decision(
                 *packet,

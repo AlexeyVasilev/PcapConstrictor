@@ -3,6 +3,7 @@
 #include <iostream>
 #include <string_view>
 
+void run_config_parsing_tests();
 void run_tls_fixture_test();
 void run_quic_fixture_test();
 
@@ -14,6 +15,7 @@ struct TestCase {
 };
 
 constexpr TestCase kTests[] {
+    {"config_parsing", &run_config_parsing_tests},
     {"tls_fixture_constrict", &run_tls_fixture_test},
     {"quic_fixture_constrict", &run_quic_fixture_test},
 };

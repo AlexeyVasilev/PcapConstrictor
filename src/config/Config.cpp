@@ -100,6 +100,21 @@ namespace {
     return true;
 }
 
+[[nodiscard]] bool parse_checksum_policy(std::string_view text, ChecksumPolicy& out) noexcept {
+    text = trim(text);
+    if (text == "preserve") {
+        out = ChecksumPolicy::preserve;
+        return true;
+    }
+
+    if (text == "recompute") {
+        out = ChecksumPolicy::recompute;
+        return true;
+    }
+
+    return false;
+}
+
 [[nodiscard]] bool assign_value(
     Config& config,
     std::string_view section,
@@ -161,6 +176,14 @@ namespace {
         if (key == "fill_byte") {
             if (!parse_byte(value, config.reinflate.fill_byte)) {
                 error = "invalid value for reinflate.fill_byte; expected byte value 0..255";
+                return false;
+            }
+            return true;
+        }
+
+        if (key == "checksum_policy") {
+            if (!parse_checksum_policy(value, config.reinflate.checksum_policy)) {
+                error = "invalid value for reinflate.checksum_policy; expected preserve or recompute";
                 return false;
             }
             return true;

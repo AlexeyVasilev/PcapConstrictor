@@ -27,6 +27,11 @@ struct Stats {
     std::uint64_t quic_bytes_saved {0};
     std::uint64_t quic_packets_kept_uncertain {0};
     std::uint64_t quic_packets_kept_dcid_mismatch {0};
+    bool checksum_recompute_requested {false};
+    std::uint64_t checksums_recomputed_ipv4 {0};
+    std::uint64_t checksums_recomputed_tcp {0};
+    std::uint64_t checksums_recomputed_udp {0};
+    std::uint64_t checksum_recompute_skipped {0};
 };
 
 void print_stats(std::ostream& out, const Stats& stats, const pc::pcap::ClassicPcapGlobalHeader& header);

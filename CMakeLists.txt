@@ -10,6 +10,7 @@ project(
 add_executable(
     pcap-constrictor
     src/main.cpp
+    src/checksum/Checksum.cpp
     src/cli/Options.cpp
     src/config/Config.cpp
     src/decode/PacketDecode.cpp
@@ -49,8 +50,10 @@ if(BUILD_TESTING)
         pcap-constrictor-tests
         tests/TestMain.cpp
         tests/TestHelpers.cpp
+        tests/ConfigParsingTests.cpp
         tests/TlsFixtureTest.cpp
         tests/QuicFixtureTest.cpp
+        src/config/Config.cpp
         src/decode/PacketDecode.cpp
         src/pcap/ClassicPcapReader.cpp
     )

@@ -20,7 +20,9 @@ Current `--stats` output includes packet and byte totals, time precision, endian
 
 In `constrict` mode, packets that are already truncated on input are kept unchanged. This avoids losing information because classic PCAP stores only the current captured length and original length, not any previous captured length.
 
-`reinflate` and its alias `restore` pad packets whose captured length is smaller than their original length. Missing captured bytes are filled with the configured reinflate fill byte, which defaults to `0xAB`. The packet record captured length is set to the original length, and the original length is left unchanged. This does not recover original encrypted bytes, recompute checksums, or modify protocol headers.
+`reinflate` and its alias `restore` pad packets whose captured length is smaller than their original length. Missing captured bytes are filled with the configured reinflate fill byte, which defaults to `0xAB`. The packet record captured length is set to the original length, and the original length is left unchanged. This does not recover original encrypted bytes.
+
+By default, reinflate preserves existing packet bytes after padding and does not modify checksum fields. With `checksum_policy = recompute`, reinflate recalculates IPv4 header checksums and TCP/UDP checksums for complete supported Ethernet/VLAN IPv4/IPv6 packets. Unsupported, incomplete, fragmented, or malformed packets keep their existing checksum fields and are reported in stats.
 
 PcapConstrictor now has internal packet decoding for Ethernet, VLAN, IPv4, IPv6, TCP, and UDP offsets. This is plumbing for suffix-only TLS constriction and future QUIC constriction.
 
@@ -47,6 +49,7 @@ allow_short_header_without_known_dcid = false
 
 [reinflate]
 fill_byte = 0xAB
+checksum_policy = preserve
 ```
 
 ## Current Scope
@@ -54,7 +57,7 @@ fill_byte = 0xAB
 Supported now:
 
 - classic PCAP passthrough
-- classic PCAP reinflate / restore with configurable filler byte
+- classic PCAP reinflate / restore with configurable filler byte and preserve/recompute checksum policy
 - internal Ethernet/VLAN/IPv4/IPv6/TCP/UDP offset decoding
 - conservative TLS Application Data constriction for in-order TCP streams
 - conservative QUIC short-header constriction for known UDP flows and matching DCIDs
