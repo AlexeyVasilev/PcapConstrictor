@@ -1,5 +1,7 @@
 # PcapConstrictor
 
+[![CI](https://github.com/AlexeyVasilev/PcapConstrictor/actions/workflows/ci.yml/badge.svg)](https://github.com/AlexeyVasilev/PcapConstrictor/actions/workflows/ci.yml)
+
 PcapConstrictor is a C++20 command-line tool for reducing PCAP and PCAPNG captures in a protocol-aware way. It preserves packet metadata and flow-analysis value, and removes encrypted payload bulk only when a safe suffix-only truncation decision exists.
 
 ## Why
