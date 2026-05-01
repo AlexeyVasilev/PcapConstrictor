@@ -109,6 +109,8 @@ cmake -S . -B build
 cmake --build build
 ```
 
+Portable CMake presets are also included for Ninja-based debug and release builds. If you need local compiler, toolchain, or generator overrides, put them in `CMakeUserPresets.json`.
+
 ## Tests
 
 Normal workflow:
