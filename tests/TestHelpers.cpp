@@ -1,7 +1,10 @@
 #include "TestHelpers.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cstdlib>
+#include <fstream>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -31,6 +34,8 @@ namespace {
 #endif
 
 [[nodiscard]] int run_command(const TestContext& context, const wchar_t* command_wide, const char* command_narrow) {
+    std::filesystem::create_directories(context.output.parent_path());
+
 #ifdef _WIN32
     static_cast<void>(command_narrow);
 
@@ -96,6 +101,96 @@ int run_constrict_command(const TestContext& context) {
 
 int run_reinflate_command(const TestContext& context) {
     return run_command(context, L"reinflate", "reinflate");
+}
+
+void compare_files_exact(
+    const std::string_view scenario_name,
+    const std::string_view stage_name,
+    const std::filesystem::path& expected_path,
+    const std::filesystem::path& actual_path
+) {
+    std::error_code error {};
+    const auto expected_size = std::filesystem::file_size(expected_path, error);
+    if (error) {
+        throw std::runtime_error("failed to get expected file size: " + expected_path.string());
+    }
+
+    error.clear();
+    const auto actual_size = std::filesystem::file_size(actual_path, error);
+    if (error) {
+        throw std::runtime_error("failed to get actual file size: " + actual_path.string());
+    }
+
+    std::ifstream expected(expected_path, std::ios::binary);
+    if (!expected.is_open()) {
+        throw std::runtime_error("failed to open expected file: " + expected_path.string());
+    }
+
+    std::ifstream actual(actual_path, std::ios::binary);
+    if (!actual.is_open()) {
+        throw std::runtime_error("failed to open actual file: " + actual_path.string());
+    }
+
+    std::array<char, 4096> expected_buffer {};
+    std::array<char, 4096> actual_buffer {};
+    std::uint64_t offset = 0;
+
+    for (;;) {
+        expected.read(expected_buffer.data(), static_cast<std::streamsize>(expected_buffer.size()));
+        actual.read(actual_buffer.data(), static_cast<std::streamsize>(actual_buffer.size()));
+
+        const auto expected_read = expected.gcount();
+        const auto actual_read = actual.gcount();
+        const auto chunk_size = std::min(expected_read, actual_read);
+
+        for (std::streamsize index = 0; index < chunk_size; ++index) {
+            const auto expected_byte = static_cast<unsigned char>(expected_buffer[static_cast<std::size_t>(index)]);
+            const auto actual_byte = static_cast<unsigned char>(actual_buffer[static_cast<std::size_t>(index)]);
+            if (expected_byte != actual_byte) {
+                std::ostringstream out {};
+                out << "scenario " << scenario_name
+                    << ", stage " << stage_name
+                    << ": file mismatch at byte offset " << (offset + static_cast<std::uint64_t>(index))
+                    << ", expected file " << expected_path.string()
+                    << ", actual file " << actual_path.string()
+                    << ", expected size " << expected_size
+                    << ", actual size " << actual_size
+                    << ", expected byte " << static_cast<unsigned>(expected_byte)
+                    << ", actual byte " << static_cast<unsigned>(actual_byte);
+                throw std::runtime_error(out.str());
+            }
+        }
+
+        if (expected_read != actual_read) {
+            std::ostringstream out {};
+            out << "scenario " << scenario_name
+                << ", stage " << stage_name
+                << ": file size/content mismatch after byte offset " << offset
+                << ", expected file " << expected_path.string()
+                << ", actual file " << actual_path.string()
+                << ", expected size " << expected_size
+                << ", actual size " << actual_size;
+            throw std::runtime_error(out.str());
+        }
+
+        if (expected_read == 0) {
+            break;
+        }
+
+        offset += static_cast<std::uint64_t>(expected_read);
+    }
+
+    if (!expected.eof() || !actual.eof()) {
+        std::ostringstream out {};
+        out << "scenario " << scenario_name
+            << ", stage " << stage_name
+            << ": failed while comparing files"
+            << ", expected file " << expected_path.string()
+            << ", actual file " << actual_path.string()
+            << ", expected size " << expected_size
+            << ", actual size " << actual_size;
+        throw std::runtime_error(out.str());
+    }
 }
 
 void verify_common_packet_invariants(

@@ -86,7 +86,9 @@ Not implemented yet:
 
 ## Tests
 
-The project includes a C++ test executable named `pcap-constrictor-tests`, wired into CTest for fixture-driven checks. The TLS and QUIC scenario fixtures live under `tests/fixtures/`.
+The project includes one standalone C++ test executable named `pcap-constrictor-tests`, wired into CTest. It runs small config/unit-style checks, packet-layout fixture tests, and golden end-to-end PCAP workflow tests.
+
+Fixture captures live under `tests/fixtures/`. Golden workflow fixtures live under `tests/fixtures/golden/` and include input captures, committed expected output captures, and the exact config files used for each stage. The golden tests compare generated PCAP outputs byte-for-byte against those committed expected outputs.
 
 ```sh
 cmake --build build

@@ -4,6 +4,8 @@
 #include <string_view>
 
 void run_config_parsing_tests();
+void run_golden_tls_test_2();
+void run_golden_quic_test_2();
 void run_reinflate_checksum_policy_test();
 void run_tls_fixture_test();
 void run_quic_fixture_test();
@@ -17,6 +19,8 @@ struct TestCase {
 
 constexpr TestCase kTests[] {
     {"config_parsing", &run_config_parsing_tests},
+    {"golden_tls_test_2", &run_golden_tls_test_2},
+    {"golden_quic_test_2", &run_golden_quic_test_2},
     {"reinflate_checksum_policy", &run_reinflate_checksum_policy_test},
     {"tls_fixture_constrict", &run_tls_fixture_test},
     {"quic_fixture_constrict", &run_quic_fixture_test},

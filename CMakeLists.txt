@@ -51,6 +51,7 @@ if(BUILD_TESTING)
         tests/TestMain.cpp
         tests/TestHelpers.cpp
         tests/ConfigParsingTests.cpp
+        tests/GoldenWorkflowTests.cpp
         tests/ReinflateChecksumPolicyTest.cpp
         tests/TlsFixtureTest.cpp
         tests/QuicFixtureTest.cpp

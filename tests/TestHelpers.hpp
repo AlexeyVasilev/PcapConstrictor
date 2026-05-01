@@ -50,6 +50,12 @@ inline void require(const bool condition, const std::string& message) {
 
 [[nodiscard]] int run_constrict_command(const TestContext& context);
 [[nodiscard]] int run_reinflate_command(const TestContext& context);
+void compare_files_exact(
+    std::string_view scenario_name,
+    std::string_view stage_name,
+    const std::filesystem::path& expected_path,
+    const std::filesystem::path& actual_path
+);
 
 void verify_common_packet_invariants(
     const std::vector<pc::pcap::PacketRecord>& input_packets,
