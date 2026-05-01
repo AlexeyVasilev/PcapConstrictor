@@ -1,4 +1,8 @@
 /build
+/out/
 /temp/
+/CMakeUserPresets.json
+/compile_commands.json
+/.vscode/settings.json
 /tests/private/
 *.private.pcap
