@@ -8,8 +8,12 @@
 #include "cli/Options.hpp"
 #include "config/Config.hpp"
 #include "decode/PacketDecode.hpp"
+#include "pcap/CaptureFormat.hpp"
 #include "pcap/ClassicPcapReader.hpp"
 #include "pcap/ClassicPcapWriter.hpp"
+#include "pcap/PcapNgFormat.hpp"
+#include "pcap/PcapNgReader.hpp"
+#include "pcap/PcapNgWriter.hpp"
 #include "quic/QuicConstrictor.hpp"
 #include "stats/Stats.hpp"
 #include "tls/TlsConstrictor.hpp"
@@ -53,6 +57,22 @@ void reinflate_packet(
         stats.checksums_recomputed_tcp += checksum_result.checksums_recomputed_tcp;
         stats.checksums_recomputed_udp += checksum_result.checksums_recomputed_udp;
         stats.checksum_recompute_skipped += checksum_result.checksum_recompute_skipped;
+        stats.checksum_recompute_skipped_unsupported_link_type +=
+            checksum_result.checksum_recompute_skipped_unsupported_link_type;
+        stats.checksum_recompute_skipped_decode_failed +=
+            checksum_result.checksum_recompute_skipped_decode_failed;
+        stats.checksum_recompute_skipped_malformed +=
+            checksum_result.checksum_recompute_skipped_malformed;
+        stats.checksum_recompute_skipped_fragment +=
+            checksum_result.checksum_recompute_skipped_fragment;
+        stats.checksum_recompute_skipped_not_tcp_udp +=
+            checksum_result.checksum_recompute_skipped_not_tcp_udp;
+        stats.checksum_recompute_skipped_incomplete +=
+            checksum_result.checksum_recompute_skipped_incomplete;
+        stats.checksum_recompute_skipped_length_mismatch +=
+            checksum_result.checksum_recompute_skipped_length_mismatch;
+        stats.checksum_recompute_skipped_ipv4_total_length_zero +=
+            checksum_result.checksum_recompute_skipped_ipv4_total_length_zero;
     }
 }
 
@@ -98,12 +118,7 @@ void apply_constrict_decision(
     // Future constriction decisions belong after this guard.
 }
 
-[[nodiscard]] int run_capture_command(const pc::cli::Options& options, const pc::config::Config& config) {
-    if (same_existing_file(options.input_path, options.output_path)) {
-        std::cerr << "error: input and output paths refer to the same file\n";
-        return 1;
-    }
-
+[[nodiscard]] int run_classic_pcap_command(const pc::cli::Options& options, const pc::config::Config& config) {
     pc::pcap::ClassicPcapReader reader {};
     if (!reader.open(options.input_path)) {
         std::cerr << "error: " << reader.error_message() << '\n';
@@ -164,6 +179,117 @@ void apply_constrict_decision(
     }
 
     return 0;
+}
+
+[[nodiscard]] int run_pcapng_command(const pc::cli::Options& options, const pc::config::Config& config) {
+    pc::pcap::PcapNgReader reader {};
+    if (!reader.open(options.input_path)) {
+        std::cerr << "error: " << reader.error_message() << '\n';
+        return 1;
+    }
+
+    pc::pcap::PcapNgWriter writer {};
+    if (!writer.open(options.output_path)) {
+        std::cerr << "error: " << writer.error_message() << '\n';
+        return 1;
+    }
+
+    pc::stats::Stats stats {};
+    pc::tls::TlsConstrictor tls_constrictor {};
+    pc::quic::QuicConstrictor quic_constrictor {};
+
+    while (auto block = reader.read_next()) {
+        if (block->kind == pc::pcap::PcapNgBlockKind::raw) {
+            if (block->type != pc::pcap::kPcapNgSectionHeaderBlockType) {
+                ++stats.pcapng_unknown_blocks_copied;
+            }
+
+            if (!writer.write_raw_block(block->raw_bytes)) {
+                std::cerr << "error: " << writer.error_message() << '\n';
+                return 1;
+            }
+            continue;
+        }
+
+        if (block->kind == pc::pcap::PcapNgBlockKind::interface_description) {
+            if (!writer.write_raw_block(block->raw_bytes)) {
+                std::cerr << "error: " << writer.error_message() << '\n';
+                return 1;
+            }
+            continue;
+        }
+
+        auto& enhanced_packet = block->enhanced_packet;
+        auto& packet = enhanced_packet.packet;
+        ++stats.pcapng_enhanced_packets;
+        stats.total_captured_bytes_read += packet.captured_length;
+        stats.total_original_bytes_read += packet.original_length;
+
+        if (!enhanced_packet.interface_known) {
+            ++stats.pcapng_unsupported_packets;
+        } else if (options.command == pc::cli::Command::reinflate) {
+            reinflate_packet(packet, stats, config, enhanced_packet.link_type);
+        } else {
+            apply_constrict_decision(
+                packet,
+                stats,
+                enhanced_packet.link_type,
+                tls_constrictor,
+                quic_constrictor,
+                config
+            );
+        }
+
+        if (!writer.write_enhanced_packet(enhanced_packet)) {
+            std::cerr << "error: " << writer.error_message() << '\n';
+            return 1;
+        }
+
+        ++stats.total_packets;
+        stats.total_captured_bytes_written += packet.captured_length;
+        stats.total_original_bytes_written += packet.original_length;
+    }
+
+    writer.close();
+
+    if (reader.has_error()) {
+        std::cerr << "error: " << reader.error_message() << '\n';
+        return 1;
+    }
+
+    if (writer.has_error()) {
+        std::cerr << "error: " << writer.error_message() << '\n';
+        return 1;
+    }
+
+    if (options.print_stats) {
+        pc::stats::print_stats(
+            std::cout,
+            stats,
+            pc::stats::PcapNgStatsContext {.endianness = reader.section_endianness()}
+        );
+    }
+
+    return 0;
+}
+
+[[nodiscard]] int run_capture_command(const pc::cli::Options& options, const pc::config::Config& config) {
+    if (same_existing_file(options.input_path, options.output_path)) {
+        std::cerr << "error: input and output paths refer to the same file\n";
+        return 1;
+    }
+
+    const auto detected_format = pc::pcap::detect_capture_format(options.input_path);
+    if (!detected_format.ok) {
+        std::cerr << "error: " << detected_format.error << '\n';
+        return 1;
+    }
+
+    if (detected_format.format == pc::pcap::CaptureFormat::classic_pcap) {
+        return run_classic_pcap_command(options, config);
+    }
+
+    return run_pcapng_command(options, config);
 }
 
 }  // namespace

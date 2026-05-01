@@ -14,8 +14,11 @@ add_executable(
     src/cli/Options.cpp
     src/config/Config.cpp
     src/decode/PacketDecode.cpp
+    src/pcap/CaptureFormat.cpp
     src/pcap/ClassicPcapReader.cpp
     src/pcap/ClassicPcapWriter.cpp
+    src/pcap/PcapNgReader.cpp
+    src/pcap/PcapNgWriter.cpp
     src/quic/QuicConstrictor.cpp
     src/stats/Stats.cpp
     src/tls/TlsConstrictor.cpp
@@ -52,13 +55,16 @@ if(BUILD_TESTING)
         tests/TestHelpers.cpp
         tests/ConfigParsingTests.cpp
         tests/GoldenWorkflowTests.cpp
+        tests/PcapNgFixtureTest.cpp
         tests/ReinflateChecksumPolicyTest.cpp
         tests/TlsFixtureTest.cpp
         tests/QuicFixtureTest.cpp
+        src/checksum/Checksum.cpp
         src/config/Config.cpp
         src/decode/PacketDecode.cpp
         src/pcap/ClassicPcapReader.cpp
         src/pcap/ClassicPcapWriter.cpp
+        src/pcap/PcapNgReader.cpp
     )
 
     target_compile_features(pcap-constrictor-tests PRIVATE cxx_std_20)

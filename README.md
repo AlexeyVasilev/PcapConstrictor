@@ -2,7 +2,7 @@
 
 PcapConstrictor is a C++20 command-line tool for reducing packet capture files while preserving packet metadata and protocol-visible information.
 
-The current implementation supports classic PCAP constrict and reinflate workflows. `constrict` reads a classic PCAP sequentially and either keeps packets full or reduces only the PCAP captured length when a safe suffix-only truncation decision exists.
+The current implementation supports classic PCAP and PCAPNG constrict and reinflate workflows. `constrict` reads captures sequentially and either keeps packets full or reduces only the captured length when a safe suffix-only truncation decision exists.
 
 Future phases are planned to broaden packet parsing and capture format support. PcapConstrictor does not decrypt TLS or QUIC, does not extract secrets, and does not capture unauthorized traffic.
 
@@ -11,14 +11,14 @@ Classic PCAP stores both a captured length and an original length for each packe
 ## Usage
 
 ```sh
-pcap-constrictor constrict input.pcap -o output.pcap --config config.ini --stats
-pcap-constrictor reinflate input.pcap -o output.pcap --config config.ini --stats
-pcap-constrictor restore input.pcap -o output.pcap --config config.ini --stats
+pcap-constrictor constrict input.pcapng -o output.pcapng --config config.ini --stats
+pcap-constrictor reinflate input.pcapng -o output.pcapng --config config.ini --stats
+pcap-constrictor restore input.pcapng -o output.pcapng --config config.ini --stats
 ```
 
 Current `--stats` output includes packet and byte totals, time precision, endianness, link type, snaplen, protocol counters, and checksum recomputation counters.
 
-In `constrict` mode, packets that are already truncated on input are kept unchanged. This avoids losing information because classic PCAP stores only the current captured length and original length, not any previous captured length. Constrict mode never recomputes checksums, never modifies IP/TCP/UDP length fields, and only reduces PCAP captured length when a safe suffix-only truncation decision exists.
+In `constrict` mode, packets that are already truncated on input are kept unchanged. This avoids losing information because classic PCAP and PCAPNG Enhanced Packet Blocks store only the current captured length and original length, not any previous captured length. Constrict mode never recomputes checksums, never modifies IP/TCP/UDP length fields, and only reduces captured length when a safe suffix-only truncation decision exists.
 
 `reinflate` and its alias `restore` pad packets whose captured length is smaller than their original length. Missing captured bytes are filled with the configured reinflate fill byte, which defaults to `0xAB`. The packet record captured length is set to the original length, and the original length is left unchanged. This does not recover original encrypted bytes.
 
@@ -26,11 +26,15 @@ In `constrict` mode, packets that are already truncated on input are kept unchan
 
 `checksum_policy = recompute` pads missing captured bytes when needed and then attempts to recompute checksums for every supported complete IPv4/IPv6 TCP/UDP packet in the reinflate output. This applies even to packets that did not need padding. It recomputes the IPv4 header checksum where applicable and recomputes TCP/UDP checksums where supported. Unsupported, malformed, fragmented, incomplete, or inconsistent packets keep their existing checksum fields and are reported in stats.
 
+Checksum recomputation may also be skipped for offload-style captures, such as packets with IPv4 total length `0` from TCP segmentation offload. PcapConstrictor does not normalize such pseudo-packets or rewrite IP length fields. Skipped packets keep their existing checksum fields.
+
 PcapConstrictor now has internal packet decoding for Ethernet, VLAN, IPv4, IPv6, TCP, and UDP offsets. This is plumbing for suffix-only TLS constriction and future QUIC constriction.
 
 TLS Application Data constriction is implemented for conservative in-order TCP streams. Packets that are uncertain, out of order, retransmitted, malformed, or already truncated on input are kept full.
 
 QUIC short-header constriction is implemented conservatively for known UDP 5-tuples with matching Destination Connection IDs. QUIC long-header packets are kept full, and QUIC is never decrypted.
+
+PCAPNG input/output is supported for little-endian Section Header Blocks, Interface Description Blocks, and Enhanced Packet Blocks. Packet processing applies to Enhanced Packet Blocks. Unknown or unsupported PCAPNG blocks are copied unchanged where safe so block order and non-packet metadata are preserved.
 
 ## Configuration
 
@@ -70,7 +74,8 @@ checksum_policy = recompute
 
 Supported now:
 
-- classic PCAP passthrough
+- classic PCAP input/output
+- little-endian PCAPNG input/output with Section Header, Interface Description, and Enhanced Packet Block support
 - classic PCAP reinflate / restore with configurable filler byte and preserve/recompute checksum policy
 - internal Ethernet/VLAN/IPv4/IPv6/TCP/UDP offset decoding
 - conservative TLS Application Data constriction for in-order TCP streams
@@ -81,7 +86,8 @@ Supported now:
 
 Not implemented yet:
 
-- PCAPNG
+- big-endian PCAPNG sections
+- broader PCAPNG block interpretation beyond safe copying plus SHB/IDB/EPB handling
 - live capture or eBPF
 
 ## Tests
@@ -89,6 +95,8 @@ Not implemented yet:
 The project includes one standalone C++ test executable named `pcap-constrictor-tests`, wired into CTest. It runs small config/unit-style checks, packet-layout fixture tests, and golden end-to-end PCAP workflow tests.
 
 Fixture captures live under `tests/fixtures/`. Golden workflow fixtures live under `tests/fixtures/golden/`. Each golden scenario contains `input.pcap`, `constricted.pcap`, `reinflated_preserve_checksum.pcap`, `reinflated_recompute_checksum.pcap`, `constrict.ini`, `reinflate_preserve.ini`, and `reinflate_recompute.ini`. The golden tests generate actual outputs under the build directory and compare them byte-for-byte against those committed expected outputs.
+
+PCAPNG fixture tests use committed captures under `tests/fixtures/pcapng/` and validate that output remains PCAPNG, preserves block structure where expected, and updates Enhanced Packet Blocks safely.
 
 ```sh
 cmake --build build

@@ -13,7 +13,7 @@ The core idea is to preserve packet metadata and protocol-visible information wh
 
 The output should remain a normal capture file. PcapConstrictor behaves like a protocol-aware adaptive snaplen tool, not like a packet rewriter.
 
-The first supported input/output format is classic libpcap. PCAPNG support is planned later.
+The supported input/output formats are classic libpcap and a small PCAPNG MVP. The current PCAPNG scope covers little-endian Section Header Blocks, Interface Description Blocks, and Enhanced Packet Blocks, while other blocks are copied unchanged where safe.
 
 ## 2. Goals
 
@@ -44,7 +44,8 @@ The first supported input/output format is classic libpcap. PCAPNG support is pl
 - No checksum recomputation in constrict mode.
 - No modification of IP/TCP/UDP length fields in constrict mode.
 - No eBPF or live capture in the first version.
-- No PCAPNG support in the first version, unless it is added after classic PCAP support is stable.
+- No big-endian PCAPNG section support in the first version.
+- No deeper PCAPNG block interpretation beyond Section Header Blocks, Interface Description Blocks, Enhanced Packet Blocks, and safe raw copying of other blocks.
 
 ## 4. Core capture invariant
 
@@ -112,7 +113,7 @@ The output is intentionally a truncated capture.
 Command shape:
 
 ```bash
-pcap-constrictor constrict input.pcap -o output.pcap
+pcap-constrictor constrict input.capture -o output.capture
 ```
 
 Behavior:
@@ -129,18 +130,22 @@ Behavior:
 - write output sequentially;
 - do not load the whole file into memory.
 
+Classic PCAP input writes classic PCAP output.
+
+PCAPNG input writes PCAPNG output. Packet processing applies to Enhanced Packet Blocks. Interface Description Blocks provide the link type used for packet decoding. Unknown or unsupported PCAPNG blocks are copied unchanged where safe.
+
 ### 7.2 Reinflate mode
 
 Command shape:
 
 ```bash
-pcap-constrictor reinflate input.pcap -o output.pcap
+pcap-constrictor reinflate input.capture -o output.capture
 ```
 
 Alias:
 
 ```bash
-pcap-constrictor restore input.pcap -o output.pcap
+pcap-constrictor restore input.capture -o output.capture
 ```
 
 Behavior:
@@ -244,6 +249,13 @@ Notes:
 - `min_saved_bytes_per_packet` prevents tiny truncations that do not materially reduce file size.
 - `reinflate.checksum_policy` accepts only `preserve` or `recompute`.
 
+PCAPNG notes:
+
+- little-endian sections are supported;
+- big-endian sections fail with a clear error in this MVP;
+- Interface Description Blocks are stored by interface id and reused when decoding Enhanced Packet Blocks;
+- if an Enhanced Packet Block references an unknown interface id, the packet is kept unchanged and reported as unsupported.
+
 ## 10. Packet decoding requirements
 
 The packet decoder should expose offsets, not owned protocol objects where possible.
@@ -268,7 +280,7 @@ Initially supported link/network/transport layers:
 Later support may include:
 
 - Linux cooked capture SLL/SLL2;
-- additional link types already supported by PcapFlowLab;
+- additional link types;
 - IPv6 extension header improvements;
 - fragmented packet handling improvements.
 
@@ -686,6 +698,9 @@ kept_unknown_protocol
 kept_uncertain
 kept_already_truncated
 malformed_packets
+pcapng_enhanced_packets
+pcapng_unknown_blocks_copied
+pcapng_unsupported_packets
 ```
 
 Optional later:
@@ -818,3 +833,5 @@ In constrict mode, checksums are preserved as originally captured.
 In reinflate mode with `checksum_policy = preserve`, synthetic padding may leave existing checksum fields inconsistent with the padded payload. This is expected.
 
 In reinflate mode with `checksum_policy = recompute`, the tool attempts to replace those fields with normal full checksums for all supported complete IPv4/IPv6 TCP/UDP packets in the output capture.
+
+PCAPNG output preserves Section Header Blocks and Interface Description Blocks, updates Enhanced Packet Blocks when packet bytes change, and copies unknown blocks unchanged where safe.

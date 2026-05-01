@@ -16,13 +16,13 @@ namespace {
 std::string usage() {
     return
         "Usage:\n"
-        "  pcap-constrictor constrict <input.pcap> -o <output.pcap> [--config config.ini] [--stats]\n"
-        "  pcap-constrictor reinflate <input.pcap> -o <output.pcap> [--config config.ini] [--stats]\n"
-        "  pcap-constrictor restore <input.pcap> -o <output.pcap> [--config config.ini] [--stats]\n"
+        "  pcap-constrictor constrict <input.pcap|input.pcapng> -o <output.pcap|output.pcapng> [--config config.ini] [--stats]\n"
+        "  pcap-constrictor reinflate <input.pcap|input.pcapng> -o <output.pcap|output.pcapng> [--config config.ini] [--stats]\n"
+        "  pcap-constrictor restore <input.pcap|input.pcapng> -o <output.pcap|output.pcapng> [--config config.ini] [--stats]\n"
         "\n"
         "Current behavior:\n"
-        "  constrict performs classic PCAP passthrough.\n"
-        "  reinflate/restore pads truncated packets and can preserve or recompute checksums via config.\n";
+        "  constrict preserves format and applies conservative suffix-only truncation when safe.\n"
+        "  reinflate/restore preserves format, pads truncated packets, and can preserve or recompute checksums via config.\n";
 }
 
 ParseResult parse_options(const int argc, char** argv) {

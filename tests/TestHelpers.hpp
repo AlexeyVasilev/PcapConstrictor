@@ -5,6 +5,7 @@
 #include <span>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "decode/PacketDecode.hpp"
@@ -50,6 +51,7 @@ inline void require(const bool condition, const std::string& message) {
 
 [[nodiscard]] int run_constrict_command(const TestContext& context);
 [[nodiscard]] int run_reinflate_command(const TestContext& context);
+
 void compare_files_exact(
     std::string_view scenario_name,
     std::string_view stage_name,

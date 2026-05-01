@@ -12,4 +12,6 @@ Golden workflow tests generate actual outputs under the build directory and comp
 
 Expected output captures should only be updated intentionally after manual verification.
 
+Committed PCAPNG fixtures under `tests/fixtures/pcapng/` must also be safe to publish. PCAPNG fixture tests should preserve block structure where possible. Golden PCAPNG expected outputs can be added later after manual verification.
+
 Local scratch captures should stay under `temp/`, `tests/private/`, or use the `*.private.pcap` suffix.

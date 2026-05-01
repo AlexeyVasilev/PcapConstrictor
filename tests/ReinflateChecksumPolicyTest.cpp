@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "bytes/Endian.hpp"
+#include "checksum/Checksum.hpp"
 #include "pcap/ClassicPcapFormat.hpp"
 #include "pcap/ClassicPcapWriter.hpp"
 #include "pcap/LinkType.hpp"
@@ -95,6 +96,13 @@ void add_bytes(std::uint32_t& sum, const std::uint8_t* bytes, const std::size_t 
         0x01U, 0x01U, 0xC0U, 0xA8U, 0x01U, 0x02U, 0x1FU, 0x90U, 0x00U, 0x35U, 0x00U, 0x0CU, 0x12U, 0x34U,
         0x41U, 0x42U, 0x43U, 0x44U,
     };
+}
+
+[[nodiscard]] std::vector<std::uint8_t> make_ipv4_udp_offload_style_packet_bytes() {
+    auto bytes = make_ipv4_udp_packet_bytes();
+    bytes[kIpv4HeaderOffset + 2U] = 0x00U;
+    bytes[kIpv4HeaderOffset + 3U] = 0x00U;
+    return bytes;
 }
 
 void write_fixture_pcap(const std::filesystem::path& path, const std::vector<std::uint8_t>& packet_bytes) {
@@ -227,4 +235,17 @@ void run_reinflate_checksum_policy_test() {
     write_be16(normalized_recompute, kIpv4ChecksumOffset, 0U);
     write_be16(normalized_recompute, kUdpChecksumOffset, 0U);
     require(normalized_recompute == normalized_input, "recompute should only change checksum fields for complete non-padded packet");
+
+    auto offload_style_packet = make_ipv4_udp_offload_style_packet_bytes();
+    const auto original_offload_style_packet = offload_style_packet;
+    const auto offload_result = pc::checksum::recompute_packet_checksums(pc::pcap::kLinkTypeEthernet, offload_style_packet);
+    require(offload_result.checksum_recompute_skipped == 1U, "offload-style packet should be counted as skipped");
+    require(
+        offload_result.checksum_recompute_skipped_ipv4_total_length_zero == 1U,
+        "IPv4 total length zero should be reported as a distinct skip reason"
+    );
+    require(offload_result.checksum_recompute_skipped_length_mismatch == 0U, "IPv4 total length zero should not fall back to generic length mismatch");
+    require(offload_result.checksums_recomputed_ipv4 == 0U, "offload-style packet should not recompute IPv4 checksum");
+    require(offload_result.checksums_recomputed_udp == 0U, "offload-style packet should not recompute UDP checksum");
+    require(offload_style_packet == original_offload_style_packet, "skipped offload-style packet should keep original checksum fields");
 }
