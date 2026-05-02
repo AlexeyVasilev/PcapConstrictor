@@ -23,10 +23,12 @@ struct ParseResult {
     Options options {};
     bool ok {false};
     bool show_help {false};
+    bool show_version {false};
     std::string error {};
 };
 
 [[nodiscard]] ParseResult parse_options(int argc, char** argv);
 [[nodiscard]] std::string usage();
+[[nodiscard]] std::string version_string();
 
 }  // namespace pc::cli

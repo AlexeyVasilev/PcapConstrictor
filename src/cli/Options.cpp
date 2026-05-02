@@ -7,8 +7,16 @@ namespace pc::cli {
 
 namespace {
 
+#ifndef PCAP_CONSTRICTOR_VERSION
+#define PCAP_CONSTRICTOR_VERSION "0.1.0"
+#endif
+
 [[nodiscard]] bool is_help_arg(const std::string_view arg) noexcept {
     return arg == "-h" || arg == "--help";
+}
+
+[[nodiscard]] bool is_version_arg(const std::string_view arg) noexcept {
+    return arg == "--version";
 }
 
 }  // namespace
@@ -16,13 +24,25 @@ namespace {
 std::string usage() {
     return
         "Usage:\n"
-        "  pcap-constrictor constrict <input.pcap|input.pcapng> -o <output.pcap|output.pcapng> [--config config.ini] [--stats]\n"
-        "  pcap-constrictor reinflate <input.pcap|input.pcapng> -o <output.pcap|output.pcapng> [--config config.ini] [--stats]\n"
-        "  pcap-constrictor restore <input.pcap|input.pcapng> -o <output.pcap|output.pcapng> [--config config.ini] [--stats]\n"
+        "  pcap-constrictor constrict input.pcap -o output.pcap [--config config.ini] [--stats]\n"
+        "  pcap-constrictor reinflate input.pcap -o output.pcap [--config config.ini] [--stats]\n"
+        "  pcap-constrictor restore input.pcap -o output.pcap [--config config.ini] [--stats]\n"
+        "  pcap-constrictor --version\n"
+        "  pcap-constrictor --help\n"
+        "\n"
+        "Notes:\n"
+        "  input/output may be classic PCAP (.pcap) or PCAPNG (.pcapng).\n"
+        "  restore is an alias for reinflate.\n"
         "\n"
         "Current behavior:\n"
         "  constrict preserves format and applies conservative suffix-only truncation when safe.\n"
         "  reinflate/restore preserves format, pads truncated packets, and can preserve or recompute checksums via config.\n";
+}
+
+std::string version_string() {
+    std::ostringstream out {};
+    out << "pcap-constrictor " << PCAP_CONSTRICTOR_VERSION;
+    return out.str();
 }
 
 ParseResult parse_options(const int argc, char** argv) {
@@ -36,6 +56,11 @@ ParseResult parse_options(const int argc, char** argv) {
     for (int index = 1; index < argc; ++index) {
         if (is_help_arg(argv[index])) {
             result.show_help = true;
+            return result;
+        }
+
+        if (is_version_arg(argv[index])) {
+            result.show_version = true;
             return result;
         }
     }
@@ -103,7 +128,7 @@ ParseResult parse_options(const int argc, char** argv) {
     }
 
     if (!saw_output) {
-        result.error = "missing output path; use -o <output.pcap>";
+        result.error = "missing output path; use -o output.pcap";
         return result;
     }
 

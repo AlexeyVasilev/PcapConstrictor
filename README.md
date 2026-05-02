@@ -45,10 +45,21 @@ bulk when that can be done safely.
 ## Usage
 
 ```sh
-pcap-constrictor constrict input.pcap -o output.pcap --config config.ini --stats
-pcap-constrictor constrict input.pcapng -o output.pcapng --config config.ini --stats
-pcap-constrictor reinflate input.pcap -o output.pcap --config config.ini --stats
-pcap-constrictor restore input.pcapng -o output.pcapng --config config.ini --stats
+pcap-constrictor constrict input.pcap -o output.pcap
+pcap-constrictor constrict input.pcapng -o output.pcapng
+pcap-constrictor reinflate output.pcap -o restored.pcap
+pcap-constrictor restore output.pcapng -o restored.pcapng
+pcap-constrictor --version
+pcap-constrictor --help
+```
+
+Default settings are intended to be useful for normal usage.
+
+Advanced usage with explicit config and stats:
+
+```sh
+pcap-constrictor constrict input.pcap -o output.pcap --config config.example.ini --stats
+pcap-constrictor reinflate output.pcap -o restored.pcap --config config.example.ini --stats
 ```
 
 `constrict` reduces captured length only when a safe suffix-only decision
@@ -65,23 +76,39 @@ enabled, and returns a non-zero exit code.
 ## Configuration
 
 Defaults are used when `--config` is omitted. The current config format is a
-small INI-like file:
+small INI-like file. A commented example is available at `config.example.ini`.
 
 ```ini
 [general]
+; Minimum number of bytes that must be saved before a packet is actually constricted.
 min_saved_bytes_per_packet = 16
 
 [tls]
+; Bytes kept from the start of a TLS Application Data record.
+; Includes the 5-byte TLS record header.
 app_data_keep_record_bytes = 8
+
+; Bytes kept from TCP packets that only continue a known TLS Application Data record.
 app_data_continuation_keep_bytes = 8
 
 [quic]
+; Bytes kept from the start of eligible QUIC short-header packets.
 short_header_keep_packet_bytes = 32
+
+; Require short-header DCID to match known connection state.
 require_dcid_match = true
+
+; Keep unknown-DCID short-header-looking packets full by default.
 allow_short_header_without_known_dcid = false
 
 [reinflate]
+; Byte used to pad missing captured bytes in reinflate/restore mode.
 fill_byte = 0xAB
+
+; preserve:
+;   keep original checksum fields, including checksum-offload partial checksums.
+; recompute:
+;   recompute IPv4 header and TCP/UDP checksums for all supported complete packets.
 checksum_policy = preserve
 ```
 
@@ -106,12 +133,11 @@ Key settings:
 
 Checksum policies:
 
-- `preserve`: default behavior; pads missing captured bytes when needed and
-  does not modify checksum fields, including checksum-offload partial
-  checksums
-- `recompute`: pads missing captured bytes when needed and then attempts to
-  recompute checksums for every supported complete IPv4/IPv6 TCP/UDP packet in
-  reinflate output, including packets that did not need padding
+- `preserve`: keep original checksum fields, including checksum-offload
+  partial checksums
+- `recompute`: recompute IPv4 header and TCP/UDP checksums for all supported
+  complete packets in reinflate output, including packets that did not need
+  padding
 
 ## Current scope
 

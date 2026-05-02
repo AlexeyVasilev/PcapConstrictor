@@ -7,6 +7,8 @@ project(
     LANGUAGES CXX
 )
 
+include(GNUInstallDirs)
+
 add_executable(
     pcap-constrictor
     src/main.cpp
@@ -37,6 +39,12 @@ target_include_directories(
         ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
+target_compile_definitions(
+    pcap-constrictor
+    PRIVATE
+        PCAP_CONSTRICTOR_VERSION="${PROJECT_VERSION}"
+)
+
 if(MSVC)
     target_compile_options(pcap-constrictor PRIVATE /W4 /permissive-)
 else()
@@ -44,6 +52,19 @@ else()
 endif()
 
 include(CTest)
+
+install(
+    TARGETS pcap-constrictor
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+)
+
+install(
+    FILES
+        README.md
+        LICENSE
+        config.example.ini
+    DESTINATION ${CMAKE_INSTALL_DOCDIR}
+)
 
 if(BUILD_TESTING)
     file(TO_CMAKE_PATH "${CMAKE_CURRENT_SOURCE_DIR}" PCAP_CONSTRICTOR_SOURCE_DIR_FOR_DEFINE)

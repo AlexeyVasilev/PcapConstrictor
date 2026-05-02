@@ -364,6 +364,11 @@ void record_incomplete_pcapng_input(
 
 int main(const int argc, char** argv) {
     const auto parsed = pc::cli::parse_options(argc, argv);
+    if (parsed.show_version) {
+        std::cout << pc::cli::version_string() << '\n';
+        return 0;
+    }
+
     if (parsed.show_help) {
         std::cout << pc::cli::usage();
         return 0;
