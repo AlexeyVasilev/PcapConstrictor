@@ -67,6 +67,7 @@ void ClassicPcapReader::clear() {
     next_packet_index_ = 0;
     has_error_ = false;
     error_message_.clear();
+    incomplete_tail_info_.reset();
 }
 
 void ClassicPcapReader::set_error(std::string message) {
@@ -163,7 +164,15 @@ std::optional<PacketRecord> ClassicPcapReader::read_next() {
 
     const auto remaining_for_header = file_size_ - next_input_offset_;
     if (remaining_for_header < kClassicPcapPacketHeaderSize) {
-        set_error_at(next_input_offset_, "unexpected EOF while reading packet header");
+        std::ostringstream out {};
+        out << "unexpected EOF while reading packet header; "
+            << remaining_for_header << " trailing byte(s) could not be processed";
+        set_error_at(next_input_offset_, out.str());
+        incomplete_tail_info_ = ClassicPcapIncompleteTailInfo {
+            .kind = ClassicPcapIncompleteTailKind::packet_header,
+            .file_offset = next_input_offset_,
+            .trailing_bytes = remaining_for_header,
+        };
         return std::nullopt;
     }
 
@@ -193,9 +202,19 @@ std::optional<PacketRecord> ClassicPcapReader::read_next() {
     if (static_cast<std::uint64_t>(captured_length) > remaining_data) {
         std::ostringstream out {};
         out << packet_error_prefix(next_packet_index_, packet_header_offset)
-            << "captured length " << captured_length
-            << " exceeds remaining file data " << remaining_data;
+            << "unexpected EOF while reading packet payload; expected " << captured_length
+            << " byte(s), available " << remaining_data
+            << " byte(s), missing "
+            << (static_cast<std::uint64_t>(captured_length) - remaining_data)
+            << " byte(s)";
         set_error(out.str());
+        incomplete_tail_info_ = ClassicPcapIncompleteTailInfo {
+            .kind = ClassicPcapIncompleteTailKind::packet_payload,
+            .file_offset = data_offset,
+            .expected_captured_length = captured_length,
+            .available_payload_bytes = remaining_data,
+            .missing_payload_bytes = static_cast<std::uint64_t>(captured_length) - remaining_data,
+        };
         return std::nullopt;
     }
 
@@ -242,6 +261,10 @@ const ClassicPcapGlobalHeader& ClassicPcapReader::global_header() const noexcept
 
 std::uint64_t ClassicPcapReader::packet_index() const noexcept {
     return next_packet_index_;
+}
+
+const std::optional<ClassicPcapIncompleteTailInfo>& ClassicPcapReader::incomplete_tail_info() const noexcept {
+    return incomplete_tail_info_;
 }
 
 }  // namespace pc::pcap

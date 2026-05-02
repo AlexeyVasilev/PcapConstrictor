@@ -43,6 +43,20 @@ struct PcapNgBlock {
     PcapNgEnhancedPacketBlock enhanced_packet {};
 };
 
+enum class PcapNgIncompleteTailKind {
+    block_header,
+    block_body,
+};
+
+struct PcapNgIncompleteTailInfo {
+    PcapNgIncompleteTailKind kind {PcapNgIncompleteTailKind::block_header};
+    std::uint64_t file_offset {0};
+    std::uint64_t trailing_bytes {0};
+    std::uint64_t expected_block_length {0};
+    std::uint64_t available_block_bytes {0};
+    std::uint64_t missing_block_bytes {0};
+};
+
 class PcapNgReader {
 public:
     [[nodiscard]] bool open(const std::filesystem::path& path);
@@ -53,6 +67,7 @@ public:
     [[nodiscard]] const std::string& error_message() const noexcept;
     [[nodiscard]] pc::bytes::Endianness section_endianness() const noexcept;
     [[nodiscard]] std::uint64_t packet_index() const noexcept;
+    [[nodiscard]] const std::optional<PcapNgIncompleteTailInfo>& incomplete_tail_info() const noexcept;
 
 private:
     struct InterfaceState {
@@ -84,6 +99,7 @@ private:
     std::uint64_t next_packet_index_ {0};
     bool has_error_ {false};
     std::string error_message_ {};
+    std::optional<PcapNgIncompleteTailInfo> incomplete_tail_info_ {};
     bool has_section_endianness_ {false};
     pc::bytes::Endianness section_endianness_ {pc::bytes::Endianness::little};
     std::vector<InterfaceState> interfaces_ {};

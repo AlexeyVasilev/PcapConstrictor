@@ -58,6 +58,10 @@ unchanged.
 `reinflate` pads missing captured bytes with `fill_byte` and restores captured
 length back to original length. `restore` is an alias for `reinflate`.
 
+If input ends unexpectedly, PcapConstrictor preserves successfully processed
+packets, warns about the incomplete tail, prints stats when `--stats` is
+enabled, and returns a non-zero exit code.
+
 ## Configuration
 
 Defaults are used when `--config` is omitted. The current config format is a

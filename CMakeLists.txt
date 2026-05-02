@@ -57,6 +57,7 @@ if(BUILD_TESTING)
         tests/GoldenWorkflowTests.cpp
         tests/PcapNgFixtureTest.cpp
         tests/ReinflateChecksumPolicyTest.cpp
+        tests/TruncatedTailFixtureTest.cpp
         tests/TlsFixtureTest.cpp
         tests/QuicFixtureTest.cpp
         src/checksum/Checksum.cpp

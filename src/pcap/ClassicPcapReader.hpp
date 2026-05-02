@@ -11,6 +11,20 @@
 
 namespace pc::pcap {
 
+enum class ClassicPcapIncompleteTailKind {
+    packet_header,
+    packet_payload,
+};
+
+struct ClassicPcapIncompleteTailInfo {
+    ClassicPcapIncompleteTailKind kind {ClassicPcapIncompleteTailKind::packet_header};
+    std::uint64_t file_offset {0};
+    std::uint64_t trailing_bytes {0};
+    std::uint64_t expected_captured_length {0};
+    std::uint64_t available_payload_bytes {0};
+    std::uint64_t missing_payload_bytes {0};
+};
+
 class ClassicPcapReader {
 public:
     [[nodiscard]] bool open(const std::filesystem::path& path);
@@ -21,6 +35,7 @@ public:
     [[nodiscard]] const std::string& error_message() const noexcept;
     [[nodiscard]] const ClassicPcapGlobalHeader& global_header() const noexcept;
     [[nodiscard]] std::uint64_t packet_index() const noexcept;
+    [[nodiscard]] const std::optional<ClassicPcapIncompleteTailInfo>& incomplete_tail_info() const noexcept;
 
 private:
     void clear();
@@ -34,7 +49,7 @@ private:
     std::uint64_t next_packet_index_ {0};
     bool has_error_ {false};
     std::string error_message_ {};
+    std::optional<ClassicPcapIncompleteTailInfo> incomplete_tail_info_ {};
 };
 
 }  // namespace pc::pcap
-

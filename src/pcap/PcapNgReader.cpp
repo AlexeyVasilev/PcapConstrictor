@@ -52,6 +52,7 @@ void PcapNgReader::clear() {
     next_packet_index_ = 0;
     has_error_ = false;
     error_message_.clear();
+    incomplete_tail_info_.reset();
     has_section_endianness_ = false;
     section_endianness_ = pc::bytes::Endianness::little;
     interfaces_.clear();
@@ -259,7 +260,15 @@ std::optional<PcapNgBlock> PcapNgReader::read_next() {
     const auto block_offset = next_input_offset_;
     const auto remaining = file_size_ - block_offset;
     if (remaining < 12U) {
-        set_error_at(block_offset, "unexpected EOF while reading PCAPNG block header");
+        std::ostringstream out {};
+        out << "unexpected EOF while reading PCAPNG block header; "
+            << remaining << " trailing byte(s) could not be processed";
+        set_error_at(block_offset, out.str());
+        incomplete_tail_info_ = PcapNgIncompleteTailInfo {
+            .kind = PcapNgIncompleteTailKind::block_header,
+            .file_offset = block_offset,
+            .trailing_bytes = remaining,
+        };
         return std::nullopt;
     }
 
@@ -311,7 +320,20 @@ std::optional<PcapNgBlock> PcapNgReader::read_next() {
     }
 
     if (static_cast<std::uint64_t>(block_total_length) > remaining) {
-        set_error_at(block_offset, "PCAPNG block total length exceeds remaining file data");
+        std::ostringstream out {};
+        out << "unexpected EOF while reading PCAPNG block; expected block length "
+            << block_total_length << " byte(s), available " << remaining
+            << " byte(s), missing "
+            << (static_cast<std::uint64_t>(block_total_length) - remaining)
+            << " byte(s)";
+        set_error_at(block_offset, out.str());
+        incomplete_tail_info_ = PcapNgIncompleteTailInfo {
+            .kind = PcapNgIncompleteTailKind::block_body,
+            .file_offset = block_offset,
+            .expected_block_length = block_total_length,
+            .available_block_bytes = remaining,
+            .missing_block_bytes = static_cast<std::uint64_t>(block_total_length) - remaining,
+        };
         return std::nullopt;
     }
 
@@ -371,6 +393,10 @@ pc::bytes::Endianness PcapNgReader::section_endianness() const noexcept {
 
 std::uint64_t PcapNgReader::packet_index() const noexcept {
     return next_packet_index_;
+}
+
+const std::optional<PcapNgIncompleteTailInfo>& PcapNgReader::incomplete_tail_info() const noexcept {
+    return incomplete_tail_info_;
 }
 
 }  // namespace pc::pcap

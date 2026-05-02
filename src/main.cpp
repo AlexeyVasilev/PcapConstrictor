@@ -20,6 +20,11 @@
 
 namespace {
 
+struct CompletionStatus {
+    bool ok {true};
+    bool incomplete_input {false};
+};
+
 [[nodiscard]] bool same_existing_file(const std::filesystem::path& left, const std::filesystem::path& right) {
     std::error_code error {};
     if (!std::filesystem::exists(left, error) || error) {
@@ -118,6 +123,51 @@ void apply_constrict_decision(
     // Future constriction decisions belong after this guard.
 }
 
+void record_incomplete_classic_input(
+    const pc::pcap::ClassicPcapReader& reader,
+    pc::stats::Stats& stats,
+    CompletionStatus& completion
+) {
+    if (!reader.incomplete_tail_info().has_value()) {
+        return;
+    }
+
+    completion.ok = false;
+    completion.incomplete_input = true;
+    ++stats.input_incomplete_tail;
+
+    const auto& info = *reader.incomplete_tail_info();
+    if (info.kind == pc::pcap::ClassicPcapIncompleteTailKind::packet_header) {
+        ++stats.input_incomplete_packet_records;
+        stats.input_trailing_unprocessed_bytes += info.trailing_bytes;
+    } else {
+        ++stats.input_incomplete_packet_records;
+        stats.input_trailing_unprocessed_bytes += info.available_payload_bytes;
+        stats.input_missing_packet_payload_bytes += info.missing_payload_bytes;
+    }
+}
+
+void record_incomplete_pcapng_input(
+    const pc::pcap::PcapNgReader& reader,
+    pc::stats::Stats& stats,
+    CompletionStatus& completion
+) {
+    if (!reader.incomplete_tail_info().has_value()) {
+        return;
+    }
+
+    completion.ok = false;
+    completion.incomplete_input = true;
+    ++stats.input_incomplete_tail;
+
+    const auto& info = *reader.incomplete_tail_info();
+    if (info.kind == pc::pcap::PcapNgIncompleteTailKind::block_header) {
+        stats.input_trailing_unprocessed_bytes += info.trailing_bytes;
+    } else {
+        stats.input_trailing_unprocessed_bytes += info.available_block_bytes;
+    }
+}
+
 [[nodiscard]] int run_classic_pcap_command(const pc::cli::Options& options, const pc::config::Config& config) {
     pc::pcap::ClassicPcapReader reader {};
     if (!reader.open(options.input_path)) {
@@ -134,6 +184,7 @@ void apply_constrict_decision(
     pc::stats::Stats stats {};
     pc::tls::TlsConstrictor tls_constrictor {};
     pc::quic::QuicConstrictor quic_constrictor {};
+    CompletionStatus completion {};
 
     while (auto packet = reader.read_next()) {
         stats.total_captured_bytes_read += packet->captured_length;
@@ -165,8 +216,11 @@ void apply_constrict_decision(
     writer.close();
 
     if (reader.has_error()) {
-        std::cerr << "error: " << reader.error_message() << '\n';
-        return 1;
+        record_incomplete_classic_input(reader, stats, completion);
+        if (!completion.incomplete_input) {
+            std::cerr << "error: " << reader.error_message() << '\n';
+            return 1;
+        }
     }
 
     if (writer.has_error()) {
@@ -174,11 +228,16 @@ void apply_constrict_decision(
         return 1;
     }
 
+    if (completion.incomplete_input) {
+        std::cerr << "Warning: " << reader.error_message() << '\n'
+            << "Warning: output contains only packets successfully processed before the incomplete tail.\n";
+    }
+
     if (options.print_stats) {
         pc::stats::print_stats(std::cout, stats, reader.global_header());
     }
 
-    return 0;
+    return completion.ok ? 0 : 1;
 }
 
 [[nodiscard]] int run_pcapng_command(const pc::cli::Options& options, const pc::config::Config& config) {
@@ -197,6 +256,7 @@ void apply_constrict_decision(
     pc::stats::Stats stats {};
     pc::tls::TlsConstrictor tls_constrictor {};
     pc::quic::QuicConstrictor quic_constrictor {};
+    CompletionStatus completion {};
 
     while (auto block = reader.read_next()) {
         if (block->kind == pc::pcap::PcapNgBlockKind::raw) {
@@ -253,13 +313,21 @@ void apply_constrict_decision(
     writer.close();
 
     if (reader.has_error()) {
-        std::cerr << "error: " << reader.error_message() << '\n';
-        return 1;
+        record_incomplete_pcapng_input(reader, stats, completion);
+        if (!completion.incomplete_input) {
+            std::cerr << "error: " << reader.error_message() << '\n';
+            return 1;
+        }
     }
 
     if (writer.has_error()) {
         std::cerr << "error: " << writer.error_message() << '\n';
         return 1;
+    }
+
+    if (completion.incomplete_input) {
+        std::cerr << "Warning: " << reader.error_message() << '\n'
+            << "Warning: output contains only packets successfully processed before the incomplete tail.\n";
     }
 
     if (options.print_stats) {
@@ -270,7 +338,7 @@ void apply_constrict_decision(
         );
     }
 
-    return 0;
+    return completion.ok ? 0 : 1;
 }
 
 [[nodiscard]] int run_capture_command(const pc::cli::Options& options, const pc::config::Config& config) {
