@@ -1,5 +1,6 @@
 #include "TestHelpers.hpp"
 
+#include <algorithm>
 #include <cerrno>
 #include <cstdint>
 #include <cstring>
@@ -142,6 +143,20 @@ void write_config_file(const std::filesystem::path& path, const std::string& che
     require(out.good(), "failed to write reinflate config file");
 }
 
+void write_config_file(
+    const std::filesystem::path& path,
+    const std::string& checksum_policy,
+    const std::string& fill_byte
+) {
+    std::ofstream out(path, std::ios::binary);
+    require(out.is_open(), "failed to create reinflate config file");
+    out << "[reinflate]\n"
+        << "fill_byte = " << fill_byte << '\n'
+        << "checksum_policy = " << checksum_policy << '\n';
+    out.close();
+    require(out.good(), "failed to write reinflate config file");
+}
+
 [[nodiscard]] TestContext make_context(
     const std::filesystem::path& fixture,
     const std::filesystem::path& output,
@@ -248,4 +263,78 @@ void run_reinflate_checksum_policy_test() {
     require(offload_result.checksums_recomputed_ipv4 == 0U, "offload-style packet should not recompute IPv4 checksum");
     require(offload_result.checksums_recomputed_udp == 0U, "offload-style packet should not recompute UDP checksum");
     require(offload_style_packet == original_offload_style_packet, "skipped offload-style packet should keep original checksum fields");
+
+    const auto random_fixture = dir / "random_fill_input.pcap";
+    const auto random_output = dir / "random_fill.out.pcap";
+    const auto random_config = dir / "random_fill.ini";
+
+    auto truncated_input_bytes = make_ipv4_udp_packet_bytes();
+    truncated_input_bytes.resize(truncated_input_bytes.size() - 3U);
+    write_config_file(random_config, "preserve", "random");
+
+    {
+        pc::pcap::ClassicPcapWriter writer {};
+        const pc::pcap::ClassicPcapGlobalHeader header {
+            .magic_bytes = {0xd4U, 0xc3U, 0xb2U, 0xa1U},
+            .endianness = pc::bytes::Endianness::little,
+            .time_precision = pc::pcap::TimePrecision::microsecond,
+            .version_major = 2U,
+            .version_minor = 4U,
+            .thiszone_bits = 0U,
+            .sigfigs = 0U,
+            .snaplen = 65535U,
+            .link_type = pc::pcap::kLinkTypeEthernet,
+        };
+        require(writer.open(random_fixture, header), "failed to open random fill fixture pcap for writing");
+
+        pc::pcap::PacketRecord packet {};
+        packet.packet_index = 0U;
+        packet.ts_sec = 123U;
+        packet.ts_fraction = 456U;
+        packet.captured_length = static_cast<std::uint32_t>(truncated_input_bytes.size());
+        packet.original_length = static_cast<std::uint32_t>(make_ipv4_udp_packet_bytes().size());
+        packet.bytes = truncated_input_bytes;
+
+        require(writer.write_packet(packet), "failed to write random fill fixture packet");
+        writer.close();
+        require(!writer.has_error(), "failed to close random fill fixture pcap");
+    }
+
+    {
+        const auto context = make_context(random_fixture, random_output, random_config);
+        const int exit_code = run_reinflate_command(context);
+        if (exit_code == -1) {
+            throw std::runtime_error(std::string("failed to spawn random-fill reinflate command: ") + std::strerror(errno));
+        }
+        require(exit_code == 0, "random-fill reinflate command failed");
+    }
+
+    const auto random_input_packets = read_packets(random_fixture);
+    const auto random_output_packets = read_packets(random_output);
+    require(random_input_packets.size() == 1U, "expected one random-fill input packet");
+    require(random_output_packets.size() == 1U, "expected one random-fill output packet");
+
+    const auto& random_input_packet = random_input_packets.front();
+    const auto& random_output_packet = random_output_packets.front();
+    require(
+        random_output_packet.captured_length == random_output_packet.original_length,
+        "random-fill reinflate should restore caplen to orig_len"
+    );
+    require(
+        random_output_packet.bytes.size() == random_output_packet.original_length,
+        "random-fill reinflate should restore packet byte size to orig_len"
+    );
+    require(
+        std::equal(
+            random_input_packet.bytes.begin(),
+            random_input_packet.bytes.end(),
+            random_output_packet.bytes.begin()
+        ),
+        "random-fill reinflate should preserve the original captured prefix"
+    );
+    require(
+        random_output_packet.bytes.size() - random_input_packet.bytes.size() ==
+            random_output_packet.original_length - random_input_packet.captured_length,
+        "random-fill reinflate should add the expected number of bytes"
+    );
 }

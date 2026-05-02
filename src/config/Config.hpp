@@ -6,6 +6,11 @@
 
 namespace pc::config {
 
+enum class FillMode {
+    fixed_byte,
+    random,
+};
+
 enum class ChecksumPolicy {
     preserve,
     recompute,
@@ -27,6 +32,7 @@ struct QuicConfig {
 };
 
 struct ReinflateConfig {
+    FillMode fill_mode {FillMode::fixed_byte};
     std::uint8_t fill_byte {0xABU};
     ChecksumPolicy checksum_policy {ChecksumPolicy::preserve};
 };

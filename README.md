@@ -103,12 +103,14 @@ allow_short_header_without_known_dcid = false
 
 [reinflate]
 ; Byte used to pad missing captured bytes in reinflate/restore mode.
+; Use 0xAB (or any byte 0..255) for fixed filler, or random for synthetic random bytes.
+; Random filler does not recover original payload bytes.
 fill_byte = 0xAB
 
 ; preserve:
 ;   keep original checksum fields, including checksum-offload partial checksums.
 ; recompute:
-;   recompute IPv4 header and TCP/UDP checksums for all supported complete packets.
+;   recompute IPv4 header and TCP/UDP checksums for all supported complete packets after padding.
 checksum_policy = preserve
 ```
 
@@ -128,7 +130,8 @@ Key settings:
 - `quic.allow_short_header_without_known_dcid`: allows short-header truncation
   even when the expected DCID is unknown
 - `reinflate.fill_byte`: byte value used to pad missing captured bytes during
-  reinflate
+  reinflate; supports fixed byte values such as `0xAB` or `171`, and
+  `random` for synthetic random filler bytes
 - `reinflate.checksum_policy`: checksum handling policy for reinflate output
 
 Checksum policies:
@@ -138,6 +141,10 @@ Checksum policies:
 - `recompute`: recompute IPv4 header and TCP/UDP checksums for all supported
   complete packets in reinflate output, including packets that did not need
   padding
+
+`fill_byte = random` produces synthetic random bytes for reinflate padding.
+It does not recover original payload and is not a cryptographic
+anonymization feature.
 
 ## Current scope
 

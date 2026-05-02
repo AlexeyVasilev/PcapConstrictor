@@ -1,6 +1,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <iostream>
+#include <random>
 #include <span>
 #include <system_error>
 
@@ -25,6 +26,11 @@ struct CompletionStatus {
     bool incomplete_input {false};
 };
 
+[[nodiscard]] std::mt19937& reinflate_random_generator() {
+    static std::mt19937 generator {std::random_device {}()};
+    return generator;
+}
+
 [[nodiscard]] bool same_existing_file(const std::filesystem::path& left, const std::filesystem::path& right) {
     std::error_code error {};
     if (!std::filesystem::exists(left, error) || error) {
@@ -48,7 +54,15 @@ void reinflate_packet(
 ) {
     if (packet.captured_length < packet.original_length) {
         const auto filler_bytes = static_cast<std::uint64_t>(packet.original_length - packet.captured_length);
+        const auto old_size = packet.bytes.size();
         packet.bytes.resize(packet.original_length, config.reinflate.fill_byte);
+        if (config.reinflate.fill_mode == pc::config::FillMode::random) {
+            std::uniform_int_distribution<unsigned int> distribution(0U, 0xFFU);
+            auto& generator = reinflate_random_generator();
+            for (std::size_t index = old_size; index < packet.bytes.size(); ++index) {
+                packet.bytes[index] = static_cast<std::uint8_t>(distribution(generator));
+            }
+        }
         packet.captured_length = packet.original_length;
 
         ++stats.packets_reinflated;

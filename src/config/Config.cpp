@@ -100,6 +100,25 @@ namespace {
     return true;
 }
 
+[[nodiscard]] bool parse_fill_mode_and_byte(
+    std::string_view text,
+    FillMode& fill_mode,
+    std::uint8_t& fill_byte
+) noexcept {
+    text = trim(text);
+    if (text == "random") {
+        fill_mode = FillMode::random;
+        return true;
+    }
+
+    if (!parse_byte(text, fill_byte)) {
+        return false;
+    }
+
+    fill_mode = FillMode::fixed_byte;
+    return true;
+}
+
 [[nodiscard]] bool parse_checksum_policy(std::string_view text, ChecksumPolicy& out) noexcept {
     text = trim(text);
     if (text == "preserve") {
@@ -174,8 +193,8 @@ namespace {
         }
     } else if (section == "reinflate") {
         if (key == "fill_byte") {
-            if (!parse_byte(value, config.reinflate.fill_byte)) {
-                error = "invalid value for reinflate.fill_byte; expected byte value 0..255";
+            if (!parse_fill_mode_and_byte(value, config.reinflate.fill_mode, config.reinflate.fill_byte)) {
+                error = "invalid value for reinflate.fill_byte; expected byte value 0..255 or random";
                 return false;
             }
             return true;
