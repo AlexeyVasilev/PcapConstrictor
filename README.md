@@ -194,6 +194,9 @@ Golden workflow tests generate outputs under the build directory and compare
 them byte-for-byte against committed expected outputs. Expected outputs should
 only be updated intentionally after manual verification.
 
+Golden scenarios may also cover mixed captures, including combinations of
+IPv4, IPv6, TLS, QUIC, ARP, and DNS traffic.
+
 All committed captures and PCAPNG fixtures must be safe to publish.
 
 ## Limitations

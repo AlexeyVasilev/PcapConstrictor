@@ -12,6 +12,8 @@ Golden workflow tests generate actual outputs under the build directory and comp
 
 Expected output captures should only be updated intentionally after manual verification.
 
+Mixed-protocol fixtures are allowed when they are safe to publish and manually verified, including combinations such as IPv4, IPv6, TLS, QUIC, ARP, and DNS traffic.
+
 Committed PCAPNG fixtures under `tests/fixtures/pcapng/` must also be safe to publish. PCAPNG fixture tests should preserve block structure where possible. Golden PCAPNG expected outputs can be added later after manual verification.
 
 Local scratch captures should stay under `temp/`, `tests/private/`, or use the `*.private.pcap` suffix.

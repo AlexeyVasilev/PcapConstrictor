@@ -4,6 +4,7 @@
 #include <string_view>
 
 void run_config_parsing_tests();
+void run_golden_ipv6_ipv4_test_1();
 void run_golden_tls_test_2();
 void run_golden_quic_test_2();
 void run_pcapng_fixture_test();
@@ -21,6 +22,7 @@ struct TestCase {
 
 constexpr TestCase kTests[] {
     {"config_parsing", &run_config_parsing_tests},
+    {"golden_ipv6_ipv4_test_1", &run_golden_ipv6_ipv4_test_1},
     {"golden_tls_test_2", &run_golden_tls_test_2},
     {"golden_quic_test_2", &run_golden_quic_test_2},
     {"pcapng_fixture_workflow", &run_pcapng_fixture_test},

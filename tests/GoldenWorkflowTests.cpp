@@ -155,3 +155,7 @@ void run_golden_tls_test_2() {
 void run_golden_quic_test_2() {
     run_golden_pipeline_test("quic_test_2");
 }
+
+void run_golden_ipv6_ipv4_test_1() {
+    run_golden_pipeline_test("ipv6_ipv4_test_1");
+}
