@@ -64,6 +64,8 @@ namespace {
 
     return _wspawnv(_P_WAIT, executable.c_str(), argv.data());
 #else
+    static_cast<void>(command_wide);
+
     auto cmd = quote_arg(context.executable) +
         " " + std::string(command_narrow) + " " + quote_arg(context.fixture) +
         " -o " + quote_arg(context.output);
