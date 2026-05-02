@@ -9,9 +9,24 @@ project(
 
 include(GNUInstallDirs)
 
-add_executable(
-    pcap-constrictor
-    src/main.cpp
+function(pcap_constrictor_apply_common_settings target_name)
+    target_compile_features(${target_name} PUBLIC cxx_std_20)
+    set_target_properties(
+        ${target_name}
+        PROPERTIES
+            CXX_EXTENSIONS OFF
+    )
+
+    if(MSVC)
+        target_compile_options(${target_name} PRIVATE /W4 /permissive-)
+    else()
+        target_compile_options(${target_name} PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+endfunction()
+
+add_library(
+    pcap-constrictor-core
+    STATIC
     src/checksum/Checksum.cpp
     src/cli/Options.cpp
     src/config/Config.cpp
@@ -26,30 +41,32 @@ add_executable(
     src/tls/TlsConstrictor.cpp
 )
 
-target_compile_features(pcap-constrictor PRIVATE cxx_std_20)
-set_target_properties(
-    pcap-constrictor
-    PROPERTIES
-        CXX_EXTENSIONS OFF
-)
-
 target_include_directories(
-    pcap-constrictor
-    PRIVATE
+    pcap-constrictor-core
+    PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
 target_compile_definitions(
-    pcap-constrictor
+    pcap-constrictor-core
     PRIVATE
         PCAP_CONSTRICTOR_VERSION="${PROJECT_VERSION}"
 )
 
-if(MSVC)
-    target_compile_options(pcap-constrictor PRIVATE /W4 /permissive-)
-else()
-    target_compile_options(pcap-constrictor PRIVATE -Wall -Wextra -Wpedantic)
-endif()
+pcap_constrictor_apply_common_settings(pcap-constrictor-core)
+
+add_executable(
+    pcap-constrictor
+    src/main.cpp
+)
+
+target_link_libraries(
+    pcap-constrictor
+    PRIVATE
+        pcap-constrictor-core
+)
+
+pcap_constrictor_apply_common_settings(pcap-constrictor)
 
 include(CTest)
 
@@ -81,27 +98,20 @@ if(BUILD_TESTING)
         tests/TruncatedTailFixtureTest.cpp
         tests/TlsFixtureTest.cpp
         tests/QuicFixtureTest.cpp
-        src/checksum/Checksum.cpp
-        src/config/Config.cpp
-        src/decode/PacketDecode.cpp
-        src/pcap/ClassicPcapReader.cpp
-        src/pcap/ClassicPcapWriter.cpp
-        src/pcap/PcapNgReader.cpp
-    )
-
-    target_compile_features(pcap-constrictor-tests PRIVATE cxx_std_20)
-    set_target_properties(
-        pcap-constrictor-tests
-        PROPERTIES
-            CXX_EXTENSIONS OFF
     )
 
     target_include_directories(
         pcap-constrictor-tests
         PRIVATE
-            ${CMAKE_CURRENT_SOURCE_DIR}/src
             ${CMAKE_CURRENT_SOURCE_DIR}/tests
     )
+
+    target_link_libraries(
+        pcap-constrictor-tests
+        PRIVATE
+            pcap-constrictor-core
+    )
+
     target_compile_definitions(
         pcap-constrictor-tests
         PRIVATE
@@ -109,13 +119,8 @@ if(BUILD_TESTING)
             PCAP_CONSTRICTOR_BINARY_DIR="${PCAP_CONSTRICTOR_BINARY_DIR_FOR_DEFINE}"
             PCAP_CONSTRICTOR_EXE_PATH="$<TARGET_FILE:pcap-constrictor>"
     )
-    add_dependencies(pcap-constrictor-tests pcap-constrictor)
 
-    if(MSVC)
-        target_compile_options(pcap-constrictor-tests PRIVATE /W4 /permissive-)
-    else()
-        target_compile_options(pcap-constrictor-tests PRIVATE -Wall -Wextra -Wpedantic)
-    endif()
+    pcap_constrictor_apply_common_settings(pcap-constrictor-tests)
 
     add_test(
         NAME pcap_constrictor_tests
