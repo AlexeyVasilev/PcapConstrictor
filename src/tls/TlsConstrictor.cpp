@@ -112,6 +112,12 @@ void TlsConstrictor::process_tcp_packet(
     };
 
     auto& state = directions_[key];
+    auto clear_active_record = [&state]() noexcept {
+        state.has_active_record = false;
+        state.active_record_constrictible = false;
+        state.active_record_content_type = 0U;
+        state.active_record_remaining_bytes = 0U;
+    };
     const auto payload = std::span<const std::uint8_t>(
         packet.bytes.data() + decoded.transport_payload_offset,
         decoded.transport_payload_size
@@ -126,26 +132,33 @@ void TlsConstrictor::process_tcp_packet(
     std::size_t candidate_payload_size = decoded.transport_payload_size;
     bool has_candidate = false;
     bool uncertain = false;
+    bool reset_direction = false;
 
     if (state.has_active_record) {
-        const auto consumed = std::min<std::size_t>(state.active_record_remaining_bytes, payload.size());
-        if (state.active_record_constrictible && consumed == payload.size()) {
-            candidate_payload_size = clamped_keep_size(config.tls.app_data_continuation_keep_bytes, payload.size());
-            has_candidate = true;
-        } else if (consumed < payload.size()) {
-            uncertain = true;
-        }
+        const auto remaining_record_bytes = static_cast<std::size_t>(state.active_record_remaining_bytes);
+        if (remaining_record_bytes > payload.size()) {
+            state.active_record_remaining_bytes -= static_cast<std::uint32_t>(payload.size());
+            payload_offset = payload.size();
+        } else if (remaining_record_bytes == payload.size()) {
+            if (state.active_record_constrictible) {
+                candidate_payload_size = clamped_keep_size(config.tls.app_data_continuation_keep_bytes, payload.size());
+                has_candidate = true;
+            }
 
-        state.active_record_remaining_bytes -= static_cast<std::uint32_t>(consumed);
-        payload_offset += consumed;
-        if (state.active_record_remaining_bytes == 0U) {
-            state.has_active_record = false;
-            state.active_record_constrictible = false;
-            state.active_record_content_type = 0;
+            payload_offset = payload.size();
+            clear_active_record();
+        } else {
+            payload_offset = remaining_record_bytes;
+            if (state.active_record_constrictible) {
+                clear_active_record();
+                reset_direction = true;
+            } else {
+                clear_active_record();
+            }
         }
     }
 
-    while (!uncertain && payload_offset < payload.size()) {
+    while (!uncertain && !reset_direction && payload_offset < payload.size()) {
         std::uint8_t content_type = 0;
         std::uint16_t record_length = 0;
         if (!read_tls_record_header(payload, payload_offset, content_type, record_length)) {
@@ -201,6 +214,11 @@ void TlsConstrictor::process_tcp_packet(
     }
 
     state.expected_tcp_seq = advance_tcp_seq(decoded.tcp_seq, decoded.transport_payload_size);
+
+    if (reset_direction) {
+        directions_.erase(key);
+        return;
+    }
 
     if (uncertain) {
         ++stats.tls_packets_kept_uncertain;

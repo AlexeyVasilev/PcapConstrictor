@@ -96,6 +96,7 @@ if(BUILD_TESTING)
         tests/PcapNgFixtureTest.cpp
         tests/ReinflateChecksumPolicyTest.cpp
         tests/TruncatedTailFixtureTest.cpp
+        tests/TlsContinuationPolicyTest.cpp
         tests/TlsFixtureTest.cpp
         tests/QuicFixtureTest.cpp
     )

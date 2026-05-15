@@ -19,16 +19,16 @@ struct ExpectedPayload {
 constexpr ExpectedPayload kExpectedPayloads[] {
     {4U, 1900U},
     {7U, 1229U},
-    {8U, 8U},
-    {9U, 8U},
+    {8U, 2800U},
+    {9U, 2800U},
     {10U, 8U},
     {15U, 14U},
     {16U, 8U},
     {17U, 1025U},
 };
 
-constexpr std::size_t kExpectedTruncatedPackets[] {7U, 8U, 9U, 10U, 15U, 16U, 17U};
-constexpr std::size_t kExpectedIdenticalPackets[] {1U, 2U, 3U, 4U, 5U, 6U, 11U, 12U, 13U, 14U};
+constexpr std::size_t kExpectedTruncatedPackets[] {7U, 10U, 15U, 16U, 17U};
+constexpr std::size_t kExpectedIdenticalPackets[] {1U, 2U, 3U, 4U, 5U, 6U, 8U, 9U, 11U, 12U, 13U, 14U};
 
 [[nodiscard]] TestContext make_tls_context() {
     const std::filesystem::path source_dir {PCAP_CONSTRICTOR_SOURCE_DIR};
