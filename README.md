@@ -88,7 +88,9 @@ min_saved_bytes_per_packet = 16
 ; Includes the 5-byte TLS record header.
 app_data_keep_record_bytes = 8
 
-; Bytes kept from TCP packets that only continue a known TLS Application Data record.
+; Bytes kept when a packet contains the exact final continuation
+; of a known TLS Application Data record.
+; Middle continuation packets are kept full by default.
 app_data_continuation_keep_bytes = 8
 
 [quic]
@@ -121,8 +123,9 @@ Key settings:
 - `tls.app_data_keep_record_bytes`: bytes to keep from the start of a TLS
   Application Data record, including the 5-byte TLS record header
 - `tls.app_data_continuation_keep_bytes`: bytes to keep from TCP payload that
-  contains only continuation bytes from an already identified TLS Application
-  Data record
+  contains the exact final continuation of an already identified TLS
+  Application Data record; middle continuation packets are kept full by
+  default
 - `quic.short_header_keep_packet_bytes`: bytes to keep from the start of an
   eligible QUIC short-header packet
 - `quic.require_dcid_match`: requires the short-header DCID to match tracked
@@ -234,7 +237,6 @@ All committed captures and PCAPNG fixtures must be safe to publish.
 
 ## Limitations
 
-- ECH can hide SNI from passive inspection
 - offload-style captures may contain partial checksums or IPv4 total length `0`
 - checksum recompute does not normalize offload pseudo-packets or rewrite IP
   length fields

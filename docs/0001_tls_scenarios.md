@@ -53,9 +53,12 @@ This preserves:
 
 ### 3.2 `tls.app_data_continuation_keep_bytes`
 
-This setting controls how many bytes to preserve from a TCP packet that contains only a continuation of a previously identified TLS Application Data record.
+This setting controls how many bytes to preserve from a TCP packet that
+contains the exact final continuation of a previously identified TLS
+Application Data record, when that TLS record ends exactly at the end of the
+current TCP payload.
 
-A continuation packet does not contain a new TLS record header at its beginning. It only contains encrypted bytes that continue a TLS record that started in an earlier TCP packet.
+Middle continuation packets are kept full by default.
 
 Example:
 
@@ -63,7 +66,8 @@ Example:
 tls.app_data_continuation_keep_bytes = 8
 ```
 
-This preserves the first 8 bytes of the TCP payload in a continuation-only packet.
+This preserves the first 8 bytes of the TCP payload in an exact-final
+continuation packet.
 
 ### 3.3 State update rule
 
@@ -162,10 +166,10 @@ TLS Application Data #1 total size is:
 The visible bytes listed in Packets #7 through #10 account for:
 
 ```text
-362 + 2800 + 2800 + 1915 = 7877 bytes
+1579 + 2800 + 2800 + 1915 = 9094 bytes
 ```
 
-So Application Data #1 still has remaining bytes after Packet #10 unless later packets outside this scenario continue it.
+So Application Data #1 ends exactly at the end of Packet #10.
 
 ## 5. Expected constrict behavior
 
@@ -184,15 +188,25 @@ Packet #7 output TCP payload:
 Expected output TCP payload = 1215 + 6 + 8 = 1229 bytes
 ```
 
-Packets #8, #9, and #10 are continuations of the already identified TLS Application Data #1 record. Because the active TLS record is known to be constrictible and no later TLS record boundary is visible inside these packets, each packet may be truncated to the configured continuation prefix:
+Packets #8 and #9 are middle continuations of the already identified TLS
+Application Data #1 record. Under the conservative continuation policy, middle
+continuation packets are kept full:
 
 ```text
-Packet #8 output TCP payload  = 8 bytes
-Packet #9 output TCP payload  = 8 bytes
+Packet #8 output TCP payload = 2800 bytes
+Packet #9 output TCP payload = 2800 bytes
+```
+
+Packet #10 is the exact final continuation packet for TLS Application Data #1.
+Because the active TLS record ends exactly at the end of the TCP payload, the
+packet may be truncated to the configured continuation prefix:
+
+```text
 Packet #10 output TCP payload = 8 bytes
 ```
 
-The implementation must update TLS record remaining length using the original TCP payload lengths, not the reduced captured lengths.
+The implementation must update TLS record remaining length using the original
+TCP payload lengths, not the reduced captured lengths.
 
 Packet #15 contains Change Cipher Spec followed by a complete TLS Application Data record:
 
@@ -258,8 +272,8 @@ Expected output TCP payload = 429 + 150 + 149 + 149 + 140 + 8 = 1025 bytes
 #5  keep full, TCP payload output = 0
 #6  keep full, TCP payload output = 0
 #7  constrict, TCP payload output = 1229
-#8  constrict, TCP payload output = 8
-#9  constrict, TCP payload output = 8
+#8  keep full, TCP payload output = 2800
+#9  keep full, TCP payload output = 2800
 #10 constrict, TCP payload output = 8
 #11 keep full, TCP payload output = 0
 #12 keep full, TCP payload output = 0
@@ -274,8 +288,8 @@ Expected output TCP payload = 429 + 150 + 149 + 149 + 140 + 8 = 1025 bytes
 
 ```text
 #7:  2800 - 1229 = 1571 bytes saved
-#8:  2800 - 8    = 2792 bytes saved
-#9:  2800 - 8    = 2792 bytes saved
+#8:  2800 - 2800 = 0 bytes saved
+#9:  2800 - 2800 = 0 bytes saved
 #10: 1915 - 8    = 1907 bytes saved
 #15: 64 - 14     = 50 bytes saved
 #16: 92 - 8      = 84 bytes saved
@@ -285,7 +299,7 @@ Expected output TCP payload = 429 + 150 + 149 + 149 + 140 + 8 = 1025 bytes
 Total saved TCP payload bytes in the listed packets:
 
 ```text
-1571 + 2792 + 2792 + 1907 + 50 + 84 + 140 = 9336 bytes
+1571 + 1907 + 50 + 84 + 140 = 3752 bytes
 ```
 
 The actual saved captured bytes at the PCAP record level should equal the TCP payload savings when the transport payload suffix is truncated and lower-layer headers are preserved unchanged.
@@ -299,4 +313,3 @@ The actual saved captured bytes at the PCAP record level should equal the TCP pa
 - TLS capture beginning mid-stream.
 - TLS packet with only continuation data and no later TLS record boundary.
 - TLS packet with Application Data followed by a non-Application-Data record, requiring keep-full behavior because only suffix truncation is allowed.
-

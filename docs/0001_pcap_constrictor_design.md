@@ -245,6 +245,9 @@ Notes:
 
 - `tls.app_data_keep_record_bytes` includes the 5-byte TLS record header.
 - `tls.app_data_keep_record_bytes` must be at least 5.
+- `tls.app_data_continuation_keep_bytes` applies only to an exact final
+  continuation packet for a known TLS Application Data record; middle
+  continuation packets are kept full by default.
 - `quic.short_header_keep_packet_bytes` is counted from the beginning of the QUIC packet inside the UDP payload.
 - `min_saved_bytes_per_packet` prevents tiny truncations that do not materially reduce file size.
 - `reinflate.checksum_policy` accepts only `preserve` or `recompute`.
@@ -368,7 +371,29 @@ For each TCP packet:
 - bytes after the selected cut point are dropped;
 - original packet length is unchanged.
 
-### 11.5 TLS example: multiple records in one TCP packet
+### 11.5 TLS Application Data continuation policy
+
+Default continuation policy:
+
+- if TLS Application Data starts in the current TCP packet, it may be
+  truncated to `tls.app_data_keep_record_bytes`;
+- if the current TCP packet contains only a middle continuation of a known
+  TLS Application Data record, keep the packet full;
+- if the current TCP packet contains the exact final continuation of a known
+  TLS Application Data record and the record ends exactly at the end of the
+  TCP payload, it may be truncated to
+  `tls.app_data_continuation_keep_bytes`;
+- if a known TLS Application Data continuation ends inside the current TCP
+  packet and there are additional bytes after it, keep the packet full and
+  reset TLS state for that direction;
+- if a non-Application-Data TLS record continuation ends inside the current
+  TCP packet, preserve the continuation bytes, clear the active record, and
+  continue parsing visible TLS records in the same packet.
+
+TLS/TCP state must still advance using the original TCP payload sizes, not the
+reduced output sizes.
+
+### 11.6 TLS example: multiple records in one TCP packet
 
 Input TCP payload:
 
@@ -400,7 +425,7 @@ Total output TCP payload size:
 
 Only one suffix cut is performed.
 
-### 11.6 TLS example: record crossing TCP packet boundary
+### 11.7 TLS example: record crossing TCP packet boundary
 
 Input:
 
@@ -424,6 +449,7 @@ Config:
 
 ```text
 tls.app_data_keep_record_bytes = 8
+tls.app_data_continuation_keep_bytes = 8
 ```
 
 Expected output:
@@ -446,7 +472,12 @@ Rationale for Packet #2:
 
 The first 20 bytes are continuation bytes from the previous TLS record. They must be preserved in order to reach the next TLS record boundary and preserve the prefix of TLS AppData #3. Since only suffix truncation is allowed, these continuation bytes cannot be removed while preserving the later TLS record prefix.
 
-### 11.7 TLS TCP state
+This example is intentionally conservative. It does not imply that every
+continuation-only packet is truncated. Middle Application Data continuation
+packets are kept full by default, and only an exact final continuation packet
+may be truncated to `tls.app_data_continuation_keep_bytes`.
+
+### 11.8 TLS TCP state
 
 TLS over TCP requires per-direction state.
 
