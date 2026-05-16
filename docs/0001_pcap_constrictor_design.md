@@ -230,6 +230,7 @@ min_saved_bytes_per_packet = 16
 [tls]
 app_data_keep_record_bytes = 8
 app_data_continuation_keep_bytes = 8
+app_data_continuation_policy = final_only
 
 [quic]
 short_header_keep_packet_bytes = 32
@@ -245,9 +246,13 @@ Notes:
 
 - `tls.app_data_keep_record_bytes` includes the 5-byte TLS record header.
 - `tls.app_data_keep_record_bytes` must be at least 5.
-- `tls.app_data_continuation_keep_bytes` applies only to an exact final
-  continuation packet for a known TLS Application Data record; middle
-  continuation packets are kept full by default.
+- `tls.app_data_continuation_policy` accepts only `final_only` or `stream`.
+- with `tls.app_data_continuation_policy = final_only`,
+  `tls.app_data_continuation_keep_bytes` applies only to an exact final
+  continuation packet for a known TLS Application Data record.
+- with `tls.app_data_continuation_policy = stream`,
+  `tls.app_data_continuation_keep_bytes` also applies to known middle
+  continuation packets when TCP/TLS stream state is clean.
 - `quic.short_header_keep_packet_bytes` is counted from the beginning of the QUIC packet inside the UDP payload.
 - `min_saved_bytes_per_packet` prevents tiny truncations that do not materially reduce file size.
 - `reinflate.checksum_policy` accepts only `preserve` or `recompute`.
@@ -375,6 +380,10 @@ For each TCP packet:
 
 Default continuation policy:
 
+```text
+tls.app_data_continuation_policy = final_only
+```
+
 - if TLS Application Data starts in the current TCP packet, it may be
   truncated to `tls.app_data_keep_record_bytes`;
 - if the current TCP packet contains only a middle continuation of a known
@@ -392,6 +401,25 @@ Default continuation policy:
 
 TLS/TCP state must still advance using the original TCP payload sizes, not the
 reduced output sizes.
+
+With:
+
+```text
+tls.app_data_continuation_policy = stream
+```
+
+- if the current TCP packet starts inside a known TLS Application Data record
+  and TCP/TLS stream state is clean, the packet may be truncated to
+  `tls.app_data_continuation_keep_bytes`;
+- this applies to middle continuation packets and exact final continuation
+  packets;
+- if a known TLS Application Data continuation ends before the end of the
+  TCP payload, keep the packet full and reset stream state for now;
+- visible TLS record parsing at a TCP payload boundary is unchanged.
+
+This mode does not decrypt TLS and does not recover original payload bytes. It
+only allows stronger suffix-only truncation for known TLS Application Data
+continuation packets when TCP/TLS stream state is clean.
 
 ### 11.6 TLS example: multiple records in one TCP packet
 
@@ -450,6 +478,7 @@ Config:
 ```text
 tls.app_data_keep_record_bytes = 8
 tls.app_data_continuation_keep_bytes = 8
+tls.app_data_continuation_policy = final_only
 ```
 
 Expected output:
@@ -476,6 +505,11 @@ This example is intentionally conservative. It does not imply that every
 continuation-only packet is truncated. Middle Application Data continuation
 packets are kept full by default, and only an exact final continuation packet
 may be truncated to `tls.app_data_continuation_keep_bytes`.
+
+With `tls.app_data_continuation_policy = stream`, a packet that starts inside
+the known `TLS AppData #2` continuation may be truncated to
+`tls.app_data_continuation_keep_bytes` when TCP/TLS stream state is clean.
+The suffix-only invariant and packet-length preservation rules do not change.
 
 ### 11.8 TLS TCP state
 

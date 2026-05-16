@@ -16,6 +16,8 @@ constexpr std::uint8_t kTlsAlert = 0x15U;
 constexpr std::uint8_t kTlsHandshake = 0x16U;
 constexpr std::uint8_t kTlsApplicationData = 0x17U;
 constexpr std::size_t kTlsRecordHeaderSize = 5U;
+constexpr std::uint8_t kTcpFlagSyn = 0x02U;
+constexpr std::uint8_t kTcpFlagRst = 0x04U;
 
 [[nodiscard]] bool has_bytes(
     const std::span<const std::uint8_t> bytes,
@@ -59,6 +61,13 @@ constexpr std::size_t kTlsRecordHeaderSize = 5U;
     return std::min(static_cast<std::size_t>(configured), available);
 }
 
+enum class TlsTruncationKind {
+    none,
+    app_data_start,
+    final_continuation,
+    stream_continuation,
+};
+
 }  // namespace
 
 bool TlsConstrictor::DirectionKey::operator==(const DirectionKey& other) const noexcept {
@@ -98,9 +107,7 @@ void TlsConstrictor::process_tcp_packet(
     const pc::config::Config& config,
     pc::stats::Stats& stats
 ) {
-    if (!decoded.decoded ||
-        decoded.transport != pc::decode::TransportProtocol::Tcp ||
-        decoded.transport_payload_size == 0U) {
+    if (!decoded.decoded || decoded.transport != pc::decode::TransportProtocol::Tcp) {
         return;
     }
 
@@ -110,6 +117,22 @@ void TlsConstrictor::process_tcp_packet(
         .src_port = decoded.src_port,
         .dst_port = decoded.dst_port,
     };
+    const DirectionKey reverse_key {
+        .src_ip = decoded.dst_ip,
+        .dst_ip = decoded.src_ip,
+        .src_port = decoded.dst_port,
+        .dst_port = decoded.src_port,
+    };
+
+    if ((decoded.tcp_flags & (kTcpFlagSyn | kTcpFlagRst)) != 0U) {
+        directions_.erase(key);
+        directions_.erase(reverse_key);
+        ++stats.tls_packets_state_reset_on_syn_or_rst;
+    }
+
+    if (decoded.transport_payload_size == 0U) {
+        return;
+    }
 
     auto& state = directions_[key];
     auto clear_active_record = [&state]() noexcept {
@@ -118,14 +141,20 @@ void TlsConstrictor::process_tcp_packet(
         state.active_record_content_type = 0U;
         state.active_record_remaining_bytes = 0U;
     };
+    const bool confirmed_tls = state.confirmed_tls;
     const auto payload = std::span<const std::uint8_t>(
         packet.bytes.data() + decoded.transport_payload_offset,
         decoded.transport_payload_size
     );
+    bool saw_seq_mismatch = false;
 
     if (state.synchronized && decoded.tcp_seq != state.expected_tcp_seq) {
-        ++stats.tls_packets_kept_uncertain;
-        return;
+        ++stats.tls_packets_kept_tcp_seq_mismatch;
+        ++stats.tls_packets_state_reset_on_seq_mismatch;
+        saw_seq_mismatch = true;
+        clear_active_record();
+        state.synchronized = false;
+        state.expected_tcp_seq = 0U;
     }
 
     std::size_t payload_offset = 0;
@@ -133,16 +162,34 @@ void TlsConstrictor::process_tcp_packet(
     bool has_candidate = false;
     bool uncertain = false;
     bool reset_direction = false;
+    TlsTruncationKind truncation_kind = TlsTruncationKind::none;
+    bool kept_middle_continuation = false;
+    bool kept_app_data_continuation_with_extra_bytes = false;
+    bool resynchronized = false;
+    bool resynchronized_app_data_start = false;
 
     if (state.has_active_record) {
         const auto remaining_record_bytes = static_cast<std::size_t>(state.active_record_remaining_bytes);
         if (remaining_record_bytes > payload.size()) {
+            if (state.active_record_constrictible) {
+                if (config.tls.app_data_continuation_policy == pc::config::TlsAppDataContinuationPolicy::stream) {
+                    candidate_payload_size = clamped_keep_size(
+                        config.tls.app_data_continuation_keep_bytes,
+                        payload.size()
+                    );
+                    has_candidate = true;
+                    truncation_kind = TlsTruncationKind::stream_continuation;
+                } else {
+                    kept_middle_continuation = true;
+                }
+            }
             state.active_record_remaining_bytes -= static_cast<std::uint32_t>(payload.size());
             payload_offset = payload.size();
         } else if (remaining_record_bytes == payload.size()) {
             if (state.active_record_constrictible) {
                 candidate_payload_size = clamped_keep_size(config.tls.app_data_continuation_keep_bytes, payload.size());
                 has_candidate = true;
+                truncation_kind = TlsTruncationKind::final_continuation;
             }
 
             payload_offset = payload.size();
@@ -152,6 +199,7 @@ void TlsConstrictor::process_tcp_packet(
             if (state.active_record_constrictible) {
                 clear_active_record();
                 reset_direction = true;
+                kept_app_data_continuation_with_extra_bytes = true;
             } else {
                 clear_active_record();
             }
@@ -163,20 +211,36 @@ void TlsConstrictor::process_tcp_packet(
         std::uint16_t record_length = 0;
         if (!read_tls_record_header(payload, payload_offset, content_type, record_length)) {
             if (!state.synchronized) {
-                directions_.erase(key);
+                if (!confirmed_tls) {
+                    directions_.erase(key);
+                } else if (saw_seq_mismatch) {
+                    ++stats.tls_packets_kept_uncertain;
+                }
                 return;
             }
             uncertain = true;
             break;
         }
 
-        if (!state.synchronized && content_type != kTlsHandshake) {
+        if (!state.synchronized && content_type != kTlsHandshake && !confirmed_tls) {
             directions_.erase(key);
             ++stats.tls_packets_kept_uncertain;
+            ++stats.tls_packets_kept_unsynchronized_non_handshake;
             return;
         }
 
+        if (!state.synchronized && confirmed_tls) {
+            resynchronized = true;
+            if (content_type == kTlsApplicationData) {
+                resynchronized_app_data_start = true;
+            }
+        }
+
         state.synchronized = true;
+        if (content_type == kTlsHandshake) {
+            state.confirmed_tls = true;
+            directions_[reverse_key].confirmed_tls = true;
+        }
         const auto record_total_size = kTlsRecordHeaderSize + static_cast<std::size_t>(record_length);
         const auto remaining_payload = payload.size() - payload_offset;
         const auto is_app_data = content_type == kTlsApplicationData;
@@ -188,8 +252,10 @@ void TlsConstrictor::process_tcp_packet(
                     remaining_payload
                 );
                 has_candidate = true;
+                truncation_kind = TlsTruncationKind::app_data_start;
             } else {
                 has_candidate = false;
+                truncation_kind = TlsTruncationKind::none;
             }
 
             state.has_active_record = true;
@@ -206,8 +272,10 @@ void TlsConstrictor::process_tcp_packet(
                 record_total_size
             );
             has_candidate = true;
+            truncation_kind = TlsTruncationKind::app_data_start;
         } else {
             has_candidate = false;
+            truncation_kind = TlsTruncationKind::none;
         }
 
         payload_offset += record_total_size;
@@ -215,29 +283,62 @@ void TlsConstrictor::process_tcp_packet(
 
     state.expected_tcp_seq = advance_tcp_seq(decoded.tcp_seq, decoded.transport_payload_size);
 
+    if (resynchronized) {
+        ++stats.tls_packets_resynchronized;
+    }
+    if (resynchronized_app_data_start) {
+        ++stats.tls_packets_resynchronized_app_data_start;
+    }
+
     if (reset_direction) {
+        if (kept_app_data_continuation_with_extra_bytes) {
+            ++stats.tls_packets_kept_app_data_continuation_with_extra_bytes;
+        }
+        const auto was_confirmed_tls = state.confirmed_tls;
         directions_.erase(key);
+        if (was_confirmed_tls) {
+            directions_[key].confirmed_tls = true;
+        }
         return;
     }
 
     if (uncertain) {
         ++stats.tls_packets_kept_uncertain;
+        ++stats.tls_packets_kept_malformed_record;
         return;
     }
 
-    if (!state.synchronized || !has_candidate || candidate_payload_size >= decoded.transport_payload_size) {
+    if (!state.synchronized) {
+        return;
+    }
+
+    if (kept_middle_continuation) {
+        ++stats.tls_packets_kept_middle_continuation;
+        return;
+    }
+
+    if (!has_candidate || candidate_payload_size >= decoded.transport_payload_size) {
+        ++stats.tls_packets_kept_no_candidate;
         return;
     }
 
     const auto new_caplen = decoded.transport_payload_offset + candidate_payload_size;
     const auto old_caplen = packet.bytes.size();
     if (new_caplen >= old_caplen || old_caplen - new_caplen < config.general.min_saved_bytes_per_packet) {
+        ++stats.tls_packets_kept_min_savings;
         return;
     }
 
     packet.bytes.resize(new_caplen);
     packet.captured_length = static_cast<std::uint32_t>(new_caplen);
     ++stats.tls_packets_truncated;
+    if (truncation_kind == TlsTruncationKind::app_data_start) {
+        ++stats.tls_packets_truncated_app_data_start;
+    } else if (truncation_kind == TlsTruncationKind::final_continuation) {
+        ++stats.tls_packets_truncated_final_continuation;
+    } else if (truncation_kind == TlsTruncationKind::stream_continuation) {
+        ++stats.tls_packets_truncated_stream_continuation;
+    }
     stats.tls_bytes_saved += old_caplen - new_caplen;
 }
 

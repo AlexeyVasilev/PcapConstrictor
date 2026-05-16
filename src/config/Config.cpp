@@ -134,6 +134,24 @@ namespace {
     return false;
 }
 
+[[nodiscard]] bool parse_tls_app_data_continuation_policy(
+    std::string_view text,
+    TlsAppDataContinuationPolicy& out
+) noexcept {
+    text = trim(text);
+    if (text == "final_only") {
+        out = TlsAppDataContinuationPolicy::final_only;
+        return true;
+    }
+
+    if (text == "stream") {
+        out = TlsAppDataContinuationPolicy::stream;
+        return true;
+    }
+
+    return false;
+}
+
 [[nodiscard]] bool assign_value(
     Config& config,
     std::string_view section,
@@ -162,6 +180,14 @@ namespace {
         if (key == "app_data_continuation_keep_bytes") {
             if (!parse_u32(value, config.tls.app_data_continuation_keep_bytes)) {
                 error = "invalid value for tls.app_data_continuation_keep_bytes; expected integer >= 0";
+                return false;
+            }
+            return true;
+        }
+
+        if (key == "app_data_continuation_policy") {
+            if (!parse_tls_app_data_continuation_policy(value, config.tls.app_data_continuation_policy)) {
+                error = "invalid value for tls.app_data_continuation_policy; expected final_only or stream";
                 return false;
             }
             return true;
@@ -294,6 +320,17 @@ LoadResult load_config_file(const std::filesystem::path& path) {
     }
 
     return result;
+}
+
+std::string_view to_string(const TlsAppDataContinuationPolicy policy) noexcept {
+    switch (policy) {
+    case TlsAppDataContinuationPolicy::final_only:
+        return "final_only";
+    case TlsAppDataContinuationPolicy::stream:
+        return "stream";
+    }
+
+    return "unknown";
 }
 
 }  // namespace pc::config

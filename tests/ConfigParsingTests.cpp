@@ -41,6 +41,10 @@ void run_config_parsing_tests() {
             defaults.reinflate.checksum_policy == pc::config::ChecksumPolicy::preserve,
             "default reinflate checksum policy should be preserve"
         );
+        pc::test::require(
+            defaults.tls.app_data_continuation_policy == pc::config::TlsAppDataContinuationPolicy::final_only,
+            "default TLS continuation policy should be final_only"
+        );
     }
 
     {
@@ -100,6 +104,45 @@ void run_config_parsing_tests() {
         pc::test::require(
             loaded.error.find("fill_byte") != std::string::npos,
             "invalid fill_byte error should name the key"
+        );
+    }
+
+    {
+        const auto loaded = load_config_text(
+            "tls_continuation_policy_final_only.ini",
+            "[tls]\n"
+            "app_data_continuation_policy = final_only\n"
+        );
+        pc::test::require(loaded.ok, "app_data_continuation_policy = final_only should parse");
+        pc::test::require(
+            loaded.config.tls.app_data_continuation_policy == pc::config::TlsAppDataContinuationPolicy::final_only,
+            "app_data_continuation_policy = final_only was not stored"
+        );
+    }
+
+    {
+        const auto loaded = load_config_text(
+            "tls_continuation_policy_stream.ini",
+            "[tls]\n"
+            "app_data_continuation_policy = stream\n"
+        );
+        pc::test::require(loaded.ok, "app_data_continuation_policy = stream should parse");
+        pc::test::require(
+            loaded.config.tls.app_data_continuation_policy == pc::config::TlsAppDataContinuationPolicy::stream,
+            "app_data_continuation_policy = stream was not stored"
+        );
+    }
+
+    {
+        const auto loaded = load_config_text(
+            "tls_continuation_policy_invalid.ini",
+            "[tls]\n"
+            "app_data_continuation_policy = aggressive\n"
+        );
+        pc::test::require(!loaded.ok, "invalid app_data_continuation_policy should fail config parsing");
+        pc::test::require(
+            loaded.error.find("app_data_continuation_policy") != std::string::npos,
+            "invalid app_data_continuation_policy error should name the key"
         );
     }
 

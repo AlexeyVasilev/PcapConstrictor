@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <string_view>
 #include <string>
 
 namespace pc::config {
@@ -16,6 +17,11 @@ enum class ChecksumPolicy {
     recompute,
 };
 
+enum class TlsAppDataContinuationPolicy {
+    final_only,
+    stream,
+};
+
 struct GeneralConfig {
     std::uint32_t min_saved_bytes_per_packet {16};
 };
@@ -23,6 +29,7 @@ struct GeneralConfig {
 struct TlsConfig {
     std::uint32_t app_data_keep_record_bytes {8};
     std::uint32_t app_data_continuation_keep_bytes {8};
+    TlsAppDataContinuationPolicy app_data_continuation_policy {TlsAppDataContinuationPolicy::final_only};
 };
 
 struct QuicConfig {
@@ -51,5 +58,6 @@ struct LoadResult {
 };
 
 [[nodiscard]] LoadResult load_config_file(const std::filesystem::path& path);
+[[nodiscard]] std::string_view to_string(TlsAppDataContinuationPolicy policy) noexcept;
 
 }  // namespace pc::config

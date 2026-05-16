@@ -69,6 +69,10 @@ unchanged.
 `reinflate` pads missing captured bytes with `fill_byte` and restores captured
 length back to original length. `restore` is an alias for `reinflate`.
 
+With `--stats`, TLS diagnostic counters can help explain why TLS packets were
+kept full, including unsynchronized traffic, TCP sequence mismatches, middle
+continuations, and minimum-savings decisions.
+
 If input ends unexpectedly, PcapConstrictor preserves successfully processed
 packets, warns about the incomplete tail, prints stats when `--stats` is
 enabled, and returns a non-zero exit code.
@@ -90,8 +94,16 @@ app_data_keep_record_bytes = 8
 
 ; Bytes kept when a packet contains the exact final continuation
 ; of a known TLS Application Data record.
-; Middle continuation packets are kept full by default.
+; In stream mode, this also applies to known middle continuation packets.
 app_data_continuation_keep_bytes = 8
+
+; final_only:
+;   conservative default; keep middle continuation packets full and
+;   truncate only exact final continuation packets.
+; stream:
+;   truncate known Application Data continuation packets when TCP/TLS stream
+;   state is clean.
+app_data_continuation_policy = final_only
 
 [quic]
 ; Bytes kept from the start of eligible QUIC short-header packets.
@@ -124,8 +136,12 @@ Key settings:
   Application Data record, including the 5-byte TLS record header
 - `tls.app_data_continuation_keep_bytes`: bytes to keep from TCP payload that
   contains the exact final continuation of an already identified TLS
-  Application Data record; middle continuation packets are kept full by
-  default
+  Application Data record; in `stream` mode, this also applies to known
+  middle continuation packets
+- `tls.app_data_continuation_policy`: continuation handling policy;
+  `final_only` is the default conservative mode, while `stream` also truncates
+  known Application Data continuation packets when TCP/TLS stream state is
+  clean
 - `quic.short_header_keep_packet_bytes`: bytes to keep from the start of an
   eligible QUIC short-header packet
 - `quic.require_dcid_match`: requires the short-header DCID to match tracked
@@ -148,6 +164,11 @@ Checksum policies:
 `fill_byte = random` produces synthetic random bytes for reinflate padding.
 It does not recover original payload and is not a cryptographic
 anonymization feature.
+
+`tls.app_data_continuation_policy = stream` does not decrypt TLS and does not
+recover original payload bytes. It only allows stronger suffix-only truncation
+for known TLS Application Data continuation packets when TCP/TLS stream state
+is clean.
 
 ## Current scope
 

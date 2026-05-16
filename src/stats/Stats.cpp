@@ -8,7 +8,11 @@ namespace pc::stats {
 
 namespace {
 
-void print_common_stats(std::ostream& out, const Stats& stats) {
+void print_common_stats(
+    std::ostream& out,
+    const Stats& stats,
+    const pc::config::TlsAppDataContinuationPolicy tls_app_data_continuation_policy
+) {
     out << "total packets: " << stats.total_packets << '\n'
         << "total captured bytes read: " << stats.total_captured_bytes_read << '\n'
         << "total original bytes read: " << stats.total_original_bytes_read << '\n'
@@ -28,6 +32,23 @@ void print_common_stats(std::ostream& out, const Stats& stats) {
         << "TLS packets truncated: " << stats.tls_packets_truncated << '\n'
         << "TLS bytes saved: " << stats.tls_bytes_saved << '\n'
         << "TLS packets kept uncertain: " << stats.tls_packets_kept_uncertain << '\n'
+        << "TLS packets truncated AppData start: " << stats.tls_packets_truncated_app_data_start << '\n'
+        << "TLS packets truncated final continuation: " << stats.tls_packets_truncated_final_continuation << '\n'
+        << "TLS packets kept unsynchronized non-handshake: " << stats.tls_packets_kept_unsynchronized_non_handshake << '\n'
+        << "TLS packets kept TCP seq mismatch: " << stats.tls_packets_kept_tcp_seq_mismatch << '\n'
+        << "TLS packets kept malformed record: " << stats.tls_packets_kept_malformed_record << '\n'
+        << "TLS packets kept middle continuation: " << stats.tls_packets_kept_middle_continuation << '\n'
+        << "TLS packets kept AppData continuation with extra bytes: "
+        << stats.tls_packets_kept_app_data_continuation_with_extra_bytes << '\n'
+        << "TLS packets kept no candidate: " << stats.tls_packets_kept_no_candidate << '\n'
+        << "TLS packets kept min savings: " << stats.tls_packets_kept_min_savings << '\n'
+        << "TLS packets resynchronized: " << stats.tls_packets_resynchronized << '\n'
+        << "TLS packets resynchronized AppData start: " << stats.tls_packets_resynchronized_app_data_start << '\n'
+        << "TLS packets state reset on seq mismatch: " << stats.tls_packets_state_reset_on_seq_mismatch << '\n'
+        << "TLS packets state reset on SYN/RST: " << stats.tls_packets_state_reset_on_syn_or_rst << '\n'
+        << "TLS packets truncated stream continuation: " << stats.tls_packets_truncated_stream_continuation << '\n'
+        << "TLS AppData continuation policy: "
+        << pc::config::to_string(tls_app_data_continuation_policy) << '\n'
         << "QUIC packets truncated: " << stats.quic_packets_truncated << '\n'
         << "QUIC bytes saved: " << stats.quic_bytes_saved << '\n'
         << "QUIC packets kept uncertain: " << stats.quic_packets_kept_uncertain << '\n'
@@ -90,9 +111,14 @@ void print_warnings(std::ostream& out, const Stats& stats) {
 
 }  // namespace
 
-void print_stats(std::ostream& out, const Stats& stats, const pc::pcap::ClassicPcapGlobalHeader& header) {
+void print_stats(
+    std::ostream& out,
+    const Stats& stats,
+    const pc::pcap::ClassicPcapGlobalHeader& header,
+    const pc::config::TlsAppDataContinuationPolicy tls_app_data_continuation_policy
+) {
     out << "input format: pcap\n";
-    print_common_stats(out, stats);
+    print_common_stats(out, stats, tls_app_data_continuation_policy);
     out << "time precision: " << pc::pcap::to_string(header.time_precision) << '\n'
         << "endianness: " << pc::bytes::to_string(header.endianness) << '\n'
         << "link type: " << header.link_type << '\n'
@@ -103,7 +129,7 @@ void print_stats(std::ostream& out, const Stats& stats, const pc::pcap::ClassicP
 
 void print_stats(std::ostream& out, const Stats& stats, const PcapNgStatsContext& context) {
     out << "input format: pcapng\n";
-    print_common_stats(out, stats);
+    print_common_stats(out, stats, context.tls_app_data_continuation_policy);
     out << "endianness: " << pc::bytes::to_string(context.endianness) << '\n';
     print_warnings(out, stats);
 }

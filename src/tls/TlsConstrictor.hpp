@@ -35,6 +35,7 @@ private:
     };
 
     struct DirectionState {
+        bool confirmed_tls {false};
         bool synchronized {false};
         std::uint32_t expected_tcp_seq {0};
         bool has_active_record {false};

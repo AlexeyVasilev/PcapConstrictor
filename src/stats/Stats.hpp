@@ -2,13 +2,18 @@
 
 #include <cstdint>
 #include <iosfwd>
+#include <string_view>
 
+#include "config/Config.hpp"
 #include "pcap/ClassicPcapFormat.hpp"
 
 namespace pc::stats {
 
 struct PcapNgStatsContext {
     pc::bytes::Endianness endianness {pc::bytes::Endianness::little};
+    pc::config::TlsAppDataContinuationPolicy tls_app_data_continuation_policy {
+        pc::config::TlsAppDataContinuationPolicy::final_only
+    };
 };
 
 struct Stats {
@@ -31,6 +36,20 @@ struct Stats {
     std::uint64_t tls_packets_truncated {0};
     std::uint64_t tls_bytes_saved {0};
     std::uint64_t tls_packets_kept_uncertain {0};
+    std::uint64_t tls_packets_truncated_app_data_start {0};
+    std::uint64_t tls_packets_truncated_final_continuation {0};
+    std::uint64_t tls_packets_kept_unsynchronized_non_handshake {0};
+    std::uint64_t tls_packets_kept_tcp_seq_mismatch {0};
+    std::uint64_t tls_packets_kept_malformed_record {0};
+    std::uint64_t tls_packets_kept_middle_continuation {0};
+    std::uint64_t tls_packets_kept_app_data_continuation_with_extra_bytes {0};
+    std::uint64_t tls_packets_kept_no_candidate {0};
+    std::uint64_t tls_packets_kept_min_savings {0};
+    std::uint64_t tls_packets_resynchronized {0};
+    std::uint64_t tls_packets_resynchronized_app_data_start {0};
+    std::uint64_t tls_packets_state_reset_on_seq_mismatch {0};
+    std::uint64_t tls_packets_state_reset_on_syn_or_rst {0};
+    std::uint64_t tls_packets_truncated_stream_continuation {0};
     std::uint64_t quic_packets_truncated {0};
     std::uint64_t quic_bytes_saved {0};
     std::uint64_t quic_packets_kept_uncertain {0};
@@ -53,7 +72,12 @@ struct Stats {
     std::uint64_t pcapng_unsupported_packets {0};
 };
 
-void print_stats(std::ostream& out, const Stats& stats, const pc::pcap::ClassicPcapGlobalHeader& header);
+void print_stats(
+    std::ostream& out,
+    const Stats& stats,
+    const pc::pcap::ClassicPcapGlobalHeader& header,
+    pc::config::TlsAppDataContinuationPolicy tls_app_data_continuation_policy
+);
 void print_stats(std::ostream& out, const Stats& stats, const PcapNgStatsContext& context);
 
 }  // namespace pc::stats

@@ -248,7 +248,12 @@ void record_incomplete_pcapng_input(
     }
 
     if (options.print_stats) {
-        pc::stats::print_stats(std::cout, stats, reader.global_header());
+        pc::stats::print_stats(
+            std::cout,
+            stats,
+            reader.global_header(),
+            config.tls.app_data_continuation_policy
+        );
     }
 
     return completion.ok ? 0 : 1;
@@ -348,7 +353,10 @@ void record_incomplete_pcapng_input(
         pc::stats::print_stats(
             std::cout,
             stats,
-            pc::stats::PcapNgStatsContext {.endianness = reader.section_endianness()}
+            pc::stats::PcapNgStatsContext {
+                .endianness = reader.section_endianness(),
+                .tls_app_data_continuation_policy = config.tls.app_data_continuation_policy,
+            }
         );
     }
 
