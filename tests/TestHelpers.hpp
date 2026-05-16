@@ -32,6 +32,7 @@ struct TestContext {
     std::filesystem::path fixture {};
     std::filesystem::path output {};
     std::filesystem::path config {};
+    std::filesystem::path decision_log {};
 };
 
 inline void require(const bool condition, const std::string& message) {

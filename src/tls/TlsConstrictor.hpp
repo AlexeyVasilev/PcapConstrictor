@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <unordered_map>
 
+#include "constrict/PacketDecision.hpp"
 #include "config/Config.hpp"
 #include "decode/PacketDecode.hpp"
 #include "pcap/PacketRecord.hpp"
@@ -17,7 +18,8 @@ public:
         pc::pcap::PacketRecord& packet,
         const pc::decode::PacketDecodeResult& decoded,
         const pc::config::Config& config,
-        pc::stats::Stats& stats
+        pc::stats::Stats& stats,
+        pc::constrict::PacketDecisionDiagnostics* diagnostics = nullptr
     );
 
 private:
@@ -36,6 +38,7 @@ private:
 
     struct DirectionState {
         bool confirmed_tls {false};
+        bool has_seen_application_data {false};
         bool synchronized {false};
         std::uint32_t expected_tcp_seq {0};
         bool has_active_record {false};

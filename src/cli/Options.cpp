@@ -24,7 +24,7 @@ namespace {
 std::string usage() {
     return
         "Usage:\n"
-        "  pcap-constrictor constrict input.pcap -o output.pcap [--config config.ini] [--stats]\n"
+        "  pcap-constrictor constrict input.pcap -o output.pcap [--config config.ini] [--stats] [--decision-log decisions.csv]\n"
         "  pcap-constrictor reinflate input.pcap -o output.pcap [--config config.ini] [--stats]\n"
         "  pcap-constrictor restore input.pcap -o output.pcap [--config config.ini] [--stats]\n"
         "  pcap-constrictor --version\n"
@@ -103,6 +103,15 @@ ParseResult parse_options(const int argc, char** argv) {
                 return result;
             }
             result.options.config_path = argv[++index];
+            continue;
+        }
+
+        if (arg == "--decision-log") {
+            if (index + 1 >= argc) {
+                result.error = "missing path after --decision-log";
+                return result;
+            }
+            result.options.decision_log_path = argv[++index];
             continue;
         }
 

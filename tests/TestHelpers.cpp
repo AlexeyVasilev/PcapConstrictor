@@ -47,9 +47,11 @@ namespace {
     const std::wstring stats_flag = L"--stats";
     const std::wstring config_flag = L"--config";
     const std::wstring config = context.config.wstring();
+    const std::wstring decision_log_flag = L"--decision-log";
+    const std::wstring decision_log = context.decision_log.wstring();
 
     std::vector<const wchar_t*> argv {};
-    argv.reserve(context.config.empty() ? 7U : 9U);
+    argv.reserve((context.config.empty() ? 0U : 2U) + (context.decision_log.empty() ? 0U : 2U) + 7U);
     argv.push_back(executable.c_str());
     argv.push_back(command_value.c_str());
     argv.push_back(fixture.c_str());
@@ -58,6 +60,10 @@ namespace {
     if (!context.config.empty()) {
         argv.push_back(config_flag.c_str());
         argv.push_back(config.c_str());
+    }
+    if (!context.decision_log.empty()) {
+        argv.push_back(decision_log_flag.c_str());
+        argv.push_back(decision_log.c_str());
     }
     argv.push_back(stats_flag.c_str());
     argv.push_back(nullptr);
@@ -71,6 +77,9 @@ namespace {
         " -o " + quote_arg(context.output);
     if (!context.config.empty()) {
         cmd += " --config " + quote_arg(context.config);
+    }
+    if (!context.decision_log.empty()) {
+        cmd += " --decision-log " + quote_arg(context.decision_log);
     }
     cmd += " --stats";
     return std::system(cmd.c_str());

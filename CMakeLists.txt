@@ -30,6 +30,7 @@ add_library(
     src/checksum/Checksum.cpp
     src/cli/Options.cpp
     src/config/Config.cpp
+    src/constrict/DecisionLog.cpp
     src/decode/PacketDecode.cpp
     src/pcap/CaptureFormat.cpp
     src/pcap/ClassicPcapReader.cpp
@@ -92,6 +93,7 @@ if(BUILD_TESTING)
         tests/TestMain.cpp
         tests/TestHelpers.cpp
         tests/ConfigParsingTests.cpp
+        tests/DecisionLogFixtureTest.cpp
         tests/GoldenWorkflowTests.cpp
         tests/PcapNgFixtureTest.cpp
         tests/ReinflateChecksumPolicyTest.cpp

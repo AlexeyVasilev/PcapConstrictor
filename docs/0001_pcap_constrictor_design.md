@@ -246,13 +246,17 @@ Notes:
 
 - `tls.app_data_keep_record_bytes` includes the 5-byte TLS record header.
 - `tls.app_data_keep_record_bytes` must be at least 5.
-- `tls.app_data_continuation_policy` accepts only `final_only` or `stream`.
+- `tls.app_data_continuation_policy` accepts only `final_only`, `stream`, or `bulk`.
 - with `tls.app_data_continuation_policy = final_only`,
   `tls.app_data_continuation_keep_bytes` applies only to an exact final
   continuation packet for a known TLS Application Data record.
 - with `tls.app_data_continuation_policy = stream`,
   `tls.app_data_continuation_keep_bytes` also applies to known middle
   continuation packets when TCP/TLS stream state is clean.
+- with `tls.app_data_continuation_policy = bulk`,
+  all `stream` behavior remains enabled, and confirmed TLS directions that
+  have already seen Application Data may also truncate unsynchronized
+  non-header bulk packets to `tls.app_data_continuation_keep_bytes`.
 - `quic.short_header_keep_packet_bytes` is counted from the beginning of the QUIC packet inside the UDP payload.
 - `min_saved_bytes_per_packet` prevents tiny truncations that do not materially reduce file size.
 - `reinflate.checksum_policy` accepts only `preserve` or `recompute`.
@@ -414,12 +418,42 @@ tls.app_data_continuation_policy = stream
 - this applies to middle continuation packets and exact final continuation
   packets;
 - if a known TLS Application Data continuation ends before the end of the
-  TCP payload, keep the packet full and reset stream state for now;
+  TCP payload, preserve bytes up to the known record boundary, clear the
+  active record, and continue parsing visible TLS records from that boundary
+  inside the same packet;
+- if a visible TLS Application Data record starts after that boundary, the
+  normal AppData-start truncation rule applies at
+  `continuation_bytes + tls.app_data_keep_record_bytes`;
+- if bytes after that boundary are not a valid TLS record, keep the packet
+  full and reset stream state for that direction;
 - visible TLS record parsing at a TCP payload boundary is unchanged.
 
 This mode does not decrypt TLS and does not recover original payload bytes. It
 only allows stronger suffix-only truncation for known TLS Application Data
 continuation packets when TCP/TLS stream state is clean.
+
+With:
+
+```text
+tls.app_data_continuation_policy = bulk
+```
+
+- all `stream` behavior remains enabled;
+- if a direction is confirmed TLS, that direction has already seen
+  Application Data, and the direction is currently confirmed/unsynchronized,
+  first attempt normal packet-local resynchronization from offset 0;
+- if a valid TLS record header is visible at offset 0, use the normal parser
+  and normal truncation logic;
+- if no valid TLS record header is visible at offset 0, treat the TCP payload
+  as encrypted TLS bulk continuation and truncate it to
+  `tls.app_data_continuation_keep_bytes`;
+- do not bulk-truncate unconfirmed TLS flows;
+- do not bulk-truncate before this direction has seen Application Data.
+
+This mode is useful for out-of-order or lossy captures where TLS has already
+been confirmed but record-boundary synchronization is temporarily lost. It can
+reduce captures more strongly, but it also preserves fewer encrypted bytes and
+fewer record-boundary hints inside unsynchronized bulk regions.
 
 ### 11.6 TLS example: multiple records in one TCP packet
 
@@ -508,8 +542,18 @@ may be truncated to `tls.app_data_continuation_keep_bytes`.
 
 With `tls.app_data_continuation_policy = stream`, a packet that starts inside
 the known `TLS AppData #2` continuation may be truncated to
-`tls.app_data_continuation_keep_bytes` when TCP/TLS stream state is clean.
-The suffix-only invariant and packet-length preservation rules do not change.
+`tls.app_data_continuation_keep_bytes` when TCP/TLS stream state is clean. If
+that known continuation ends before another visible TLS record inside the same
+packet, stream mode may preserve the continuation bytes up to that record
+boundary and then apply the normal AppData-start truncation rule to the next
+visible record. The suffix-only invariant and packet-length preservation rules
+do not change.
+
+With `tls.app_data_continuation_policy = bulk`, the tool also has a fallback
+for confirmed but unsynchronized directions that have already seen
+Application Data. If such a packet does not start at a visible TLS record
+boundary, it may still be truncated to
+`tls.app_data_continuation_keep_bytes` as encrypted bulk continuation.
 
 ### 11.8 TLS TCP state
 

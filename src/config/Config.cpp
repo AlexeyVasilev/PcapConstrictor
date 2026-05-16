@@ -149,6 +149,11 @@ namespace {
         return true;
     }
 
+    if (text == "bulk") {
+        out = TlsAppDataContinuationPolicy::bulk;
+        return true;
+    }
+
     return false;
 }
 
@@ -187,7 +192,7 @@ namespace {
 
         if (key == "app_data_continuation_policy") {
             if (!parse_tls_app_data_continuation_policy(value, config.tls.app_data_continuation_policy)) {
-                error = "invalid value for tls.app_data_continuation_policy; expected final_only or stream";
+                error = "invalid value for tls.app_data_continuation_policy; expected final_only, stream, or bulk";
                 return false;
             }
             return true;
@@ -328,6 +333,8 @@ std::string_view to_string(const TlsAppDataContinuationPolicy policy) noexcept {
         return "final_only";
     case TlsAppDataContinuationPolicy::stream:
         return "stream";
+    case TlsAppDataContinuationPolicy::bulk:
+        return "bulk";
     }
 
     return "unknown";

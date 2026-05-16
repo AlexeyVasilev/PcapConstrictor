@@ -16,6 +16,7 @@ struct Options {
     std::filesystem::path input_path {};
     std::filesystem::path output_path {};
     std::optional<std::filesystem::path> config_path {};
+    std::optional<std::filesystem::path> decision_log_path {};
     bool print_stats {false};
 };
 

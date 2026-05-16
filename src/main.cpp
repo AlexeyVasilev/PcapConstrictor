@@ -1,13 +1,19 @@
 #include <cstdint>
 #include <filesystem>
+#include <iomanip>
 #include <iostream>
+#include <optional>
 #include <random>
+#include <sstream>
 #include <span>
 #include <system_error>
 
+#include "bytes/Endian.hpp"
 #include "checksum/Checksum.hpp"
 #include "cli/Options.hpp"
 #include "config/Config.hpp"
+#include "constrict/DecisionLog.hpp"
+#include "constrict/PacketDecision.hpp"
 #include "decode/PacketDecode.hpp"
 #include "pcap/CaptureFormat.hpp"
 #include "pcap/ClassicPcapReader.hpp"
@@ -25,6 +31,126 @@ struct CompletionStatus {
     bool ok {true};
     bool incomplete_input {false};
 };
+
+[[nodiscard]] std::string ip_to_string(const pc::decode::IpAddress& ip) {
+    if (ip.length == 4U) {
+        std::ostringstream out {};
+        out << static_cast<unsigned>(ip.bytes[0]) << '.'
+            << static_cast<unsigned>(ip.bytes[1]) << '.'
+            << static_cast<unsigned>(ip.bytes[2]) << '.'
+            << static_cast<unsigned>(ip.bytes[3]);
+        return out.str();
+    }
+
+    if (ip.length == 16U) {
+        std::ostringstream out {};
+        out << std::hex;
+        for (std::size_t index = 0; index < 16U; index += 2U) {
+            if (index != 0U) {
+                out << ':';
+            }
+            const auto value = static_cast<unsigned>((static_cast<unsigned>(ip.bytes[index]) << 8U) | ip.bytes[index + 1U]);
+            out << value;
+        }
+        return out.str();
+    }
+
+    return {};
+}
+
+[[nodiscard]] std::string tcp_flags_to_string(const std::uint8_t flags) {
+    std::ostringstream out {};
+    out << "0x" << std::hex << std::uppercase << std::setw(2) << std::setfill('0')
+        << static_cast<unsigned>(flags);
+    return out.str();
+}
+
+[[nodiscard]] std::string join_notes(const std::initializer_list<std::string_view> notes) {
+    std::string joined {};
+    for (const auto note : notes) {
+        if (note.empty()) {
+            continue;
+        }
+        if (!joined.empty()) {
+            joined += '|';
+        }
+        joined += note;
+    }
+    return joined;
+}
+
+[[nodiscard]] std::string decode_note_for_packet(
+    const pc::pcap::PacketRecord& packet,
+    const pc::decode::PacketDecodeResult& decoded
+) {
+    std::string ipv4_total_length_note {};
+    std::string ignored_tail_note {};
+    std::string truncated_transport_note {};
+
+    if (decoded.src_ip.length == 4U &&
+        packet.bytes.size() >= decoded.network_header_offset + 4U) {
+        const auto total_length = pc::bytes::read_be16(
+            std::span<const std::uint8_t, 2>(packet.bytes.data() + decoded.network_header_offset + 2U, 2U)
+        );
+        const auto captured_ip_bytes = packet.bytes.size() - decoded.network_header_offset;
+        if (static_cast<std::size_t>(total_length) < captured_ip_bytes) {
+            ipv4_total_length_note = "ipv4_total_length_smaller_than_captured_ip_bytes";
+            ignored_tail_note = "captured_bytes_after_ipv4_total_length_ignored";
+        }
+    }
+
+    if (decoded.decoded &&
+        decoded.transport_payload_offset + decoded.transport_payload_size < packet.bytes.size()) {
+        truncated_transport_note = "transport_payload_truncated_by_length_fields";
+    }
+
+    return join_notes({ipv4_total_length_note, ignored_tail_note, truncated_transport_note});
+}
+
+[[nodiscard]] bool should_log_decision_row(
+    const pc::decode::PacketDecodeResult& decoded,
+    const bool already_truncated
+) {
+    if (already_truncated || decoded.unsupported_link_type || decoded.malformed) {
+        return true;
+    }
+
+    return decoded.transport == pc::decode::TransportProtocol::Tcp && decoded.transport_payload_size != 0U;
+}
+
+[[nodiscard]] pc::constrict::DecisionLogRow make_decision_log_row(
+    const std::size_t packet_index,
+    const pc::pcap::PacketRecord& before,
+    const pc::pcap::PacketRecord& after,
+    const pc::decode::PacketDecodeResult& decoded,
+    const pc::constrict::PacketDecisionDiagnostics& diagnostics
+) {
+    return {
+        .packet_index = packet_index,
+        .src_ip = ip_to_string(decoded.src_ip),
+        .src_port = decoded.src_port,
+        .dst_ip = ip_to_string(decoded.dst_ip),
+        .dst_port = decoded.dst_port,
+        .transport = decoded.transport == pc::decode::TransportProtocol::Tcp ? "tcp" :
+                     decoded.transport == pc::decode::TransportProtocol::Udp ? "udp" : "",
+        .tcp_seq = decoded.tcp_seq,
+        .tcp_ack = decoded.tcp_ack,
+        .tcp_flags = decoded.transport == pc::decode::TransportProtocol::Tcp ? tcp_flags_to_string(decoded.tcp_flags) : "",
+        .captured_length_before = before.captured_length,
+        .captured_length_after = after.captured_length,
+        .original_length = after.original_length,
+        .transport_payload_size = decoded.transport_payload_size,
+        .decision = diagnostics.decision,
+        .reason = diagnostics.reason,
+        .bytes_saved = static_cast<std::uint64_t>(before.captured_length - after.captured_length),
+        .tls_state_before = diagnostics.tls_state_before,
+        .tls_state_after = diagnostics.tls_state_after,
+        .tls_active_record_remaining_before = diagnostics.tls_active_record_remaining_before,
+        .tls_active_record_remaining_after = diagnostics.tls_active_record_remaining_after,
+        .tls_record_event = diagnostics.tls_record_event,
+        .decode_note = diagnostics.decode_note,
+    };
+}
 
 [[nodiscard]] std::mt19937& reinflate_random_generator() {
     static std::mt19937 generator {std::random_device {}()};
@@ -113,17 +239,22 @@ void record_decode_stats(const pc::decode::PacketDecodeResult& decoded, pc::stat
     }
 }
 
-void apply_constrict_decision(
+[[nodiscard]] pc::decode::PacketDecodeResult apply_constrict_decision(
     pc::pcap::PacketRecord& packet,
     pc::stats::Stats& stats,
     const std::uint32_t link_type,
     pc::tls::TlsConstrictor& tls_constrictor,
     pc::quic::QuicConstrictor& quic_constrictor,
-    const pc::config::Config& config
+    const pc::config::Config& config,
+    pc::constrict::PacketDecisionDiagnostics* diagnostics = nullptr
 ) {
     if (packet.captured_length < packet.original_length) {
         ++stats.already_truncated_input_packets;
-        return;
+        if (diagnostics != nullptr) {
+            diagnostics->decision = "keep";
+            diagnostics->reason = "keep.already_truncated";
+        }
+        return {};
     }
 
     const auto decoded = pc::decode::decode_packet(
@@ -131,10 +262,26 @@ void apply_constrict_decision(
         std::span<const std::uint8_t>(packet.bytes.data(), packet.bytes.size())
     );
     record_decode_stats(decoded, stats);
-    tls_constrictor.process_tcp_packet(packet, decoded, config, stats);
+    if (diagnostics != nullptr) {
+        diagnostics->decode_note = decode_note_for_packet(packet, decoded);
+        diagnostics->decision = "keep";
+        if (decoded.unsupported_link_type) {
+            diagnostics->reason = "keep.unsupported_link_type";
+        } else if (decoded.malformed) {
+            diagnostics->reason = "keep.decode_malformed";
+        } else if (decoded.transport == pc::decode::TransportProtocol::Tcp && decoded.transport_payload_size == 0U) {
+            diagnostics->reason = "keep.no_payload";
+        } else if (decoded.transport != pc::decode::TransportProtocol::Tcp) {
+            diagnostics->reason = "keep.not_tcp";
+        } else {
+            diagnostics->reason = "keep.no_candidate";
+        }
+    }
+    tls_constrictor.process_tcp_packet(packet, decoded, config, stats, diagnostics);
     quic_constrictor.process_udp_packet(packet, decoded, config, stats);
 
     // Future constriction decisions belong after this guard.
+    return decoded;
 }
 
 void record_incomplete_classic_input(
@@ -199,22 +346,38 @@ void record_incomplete_pcapng_input(
     pc::tls::TlsConstrictor tls_constrictor {};
     pc::quic::QuicConstrictor quic_constrictor {};
     CompletionStatus completion {};
+    pc::constrict::DecisionLogWriter decision_log_writer {};
+    const bool write_decision_log = options.decision_log_path.has_value();
+    if (write_decision_log && !decision_log_writer.open(*options.decision_log_path)) {
+        std::cerr << "error: " << decision_log_writer.error_message() << '\n';
+        return 1;
+    }
 
     while (auto packet = reader.read_next()) {
+        const auto before_packet = *packet;
+        const auto packet_index = static_cast<std::size_t>(stats.total_packets + 1U);
         stats.total_captured_bytes_read += packet->captured_length;
         stats.total_original_bytes_read += packet->original_length;
 
         if (options.command == pc::cli::Command::reinflate) {
             reinflate_packet(*packet, stats, config, reader.global_header().link_type);
         } else {
-            apply_constrict_decision(
+            pc::constrict::PacketDecisionDiagnostics diagnostics {};
+            const auto decoded = apply_constrict_decision(
                 *packet,
                 stats,
                 reader.global_header().link_type,
                 tls_constrictor,
                 quic_constrictor,
-                config
+                config,
+                write_decision_log ? &diagnostics : nullptr
             );
+            if (write_decision_log && should_log_decision_row(decoded, before_packet.captured_length < before_packet.original_length)) {
+                if (!decision_log_writer.write_row(make_decision_log_row(packet_index, before_packet, *packet, decoded, diagnostics))) {
+                    std::cerr << "error: " << decision_log_writer.error_message() << '\n';
+                    return 1;
+                }
+            }
         }
 
         if (!writer.write_packet(*packet)) {
@@ -228,6 +391,7 @@ void record_incomplete_pcapng_input(
     }
 
     writer.close();
+    decision_log_writer.close();
 
     if (reader.has_error()) {
         record_incomplete_classic_input(reader, stats, completion);
@@ -239,6 +403,11 @@ void record_incomplete_pcapng_input(
 
     if (writer.has_error()) {
         std::cerr << "error: " << writer.error_message() << '\n';
+        return 1;
+    }
+
+    if (write_decision_log && decision_log_writer.has_error()) {
+        std::cerr << "error: " << decision_log_writer.error_message() << '\n';
         return 1;
     }
 
@@ -276,6 +445,12 @@ void record_incomplete_pcapng_input(
     pc::tls::TlsConstrictor tls_constrictor {};
     pc::quic::QuicConstrictor quic_constrictor {};
     CompletionStatus completion {};
+    pc::constrict::DecisionLogWriter decision_log_writer {};
+    const bool write_decision_log = options.decision_log_path.has_value();
+    if (write_decision_log && !decision_log_writer.open(*options.decision_log_path)) {
+        std::cerr << "error: " << decision_log_writer.error_message() << '\n';
+        return 1;
+    }
 
     while (auto block = reader.read_next()) {
         if (block->kind == pc::pcap::PcapNgBlockKind::raw) {
@@ -300,6 +475,8 @@ void record_incomplete_pcapng_input(
 
         auto& enhanced_packet = block->enhanced_packet;
         auto& packet = enhanced_packet.packet;
+        const auto before_packet = packet;
+        const auto packet_index = static_cast<std::size_t>(stats.total_packets + 1U);
         ++stats.pcapng_enhanced_packets;
         stats.total_captured_bytes_read += packet.captured_length;
         stats.total_original_bytes_read += packet.original_length;
@@ -309,14 +486,22 @@ void record_incomplete_pcapng_input(
         } else if (options.command == pc::cli::Command::reinflate) {
             reinflate_packet(packet, stats, config, enhanced_packet.link_type);
         } else {
-            apply_constrict_decision(
+            pc::constrict::PacketDecisionDiagnostics diagnostics {};
+            const auto decoded = apply_constrict_decision(
                 packet,
                 stats,
                 enhanced_packet.link_type,
                 tls_constrictor,
                 quic_constrictor,
-                config
+                config,
+                write_decision_log ? &diagnostics : nullptr
             );
+            if (write_decision_log && should_log_decision_row(decoded, before_packet.captured_length < before_packet.original_length)) {
+                if (!decision_log_writer.write_row(make_decision_log_row(packet_index, before_packet, packet, decoded, diagnostics))) {
+                    std::cerr << "error: " << decision_log_writer.error_message() << '\n';
+                    return 1;
+                }
+            }
         }
 
         if (!writer.write_enhanced_packet(enhanced_packet)) {
@@ -330,6 +515,7 @@ void record_incomplete_pcapng_input(
     }
 
     writer.close();
+    decision_log_writer.close();
 
     if (reader.has_error()) {
         record_incomplete_pcapng_input(reader, stats, completion);
@@ -341,6 +527,11 @@ void record_incomplete_pcapng_input(
 
     if (writer.has_error()) {
         std::cerr << "error: " << writer.error_message() << '\n';
+        return 1;
+    }
+
+    if (write_decision_log && decision_log_writer.has_error()) {
+        std::cerr << "error: " << decision_log_writer.error_message() << '\n';
         return 1;
     }
 
@@ -409,6 +600,12 @@ int main(const int argc, char** argv) {
             return 1;
         }
         config = loaded.config;
+    }
+
+    if (parsed.options.decision_log_path.has_value() &&
+        parsed.options.command != pc::cli::Command::constrict) {
+        std::cerr << "error: --decision-log is supported only with constrict mode\n";
+        return 1;
     }
 
     return run_capture_command(parsed.options, config);

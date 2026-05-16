@@ -23,7 +23,8 @@ bulk when that can be done safely.
 - classic PCAP input/output
 - little-endian PCAPNG input/output for Section Header Blocks, Interface
   Description Blocks, and Enhanced Packet Blocks
-- TLS Application Data constriction for conservative in-order TCP streams
+- TLS Application Data constriction with conservative and out-of-order-tolerant
+  continuation policies
 - QUIC short-header constriction for known UDP flows with matching Destination
   Connection IDs
 - reinflate/restore mode
@@ -59,6 +60,7 @@ Advanced usage with explicit config and stats:
 
 ```sh
 pcap-constrictor constrict input.pcap -o output.pcap --config config.example.ini --stats
+pcap-constrictor constrict input.pcap -o output.pcap --config config.example.ini --stats --decision-log decisions.csv
 pcap-constrictor reinflate output.pcap -o restored.pcap --config config.example.ini --stats
 ```
 
@@ -72,6 +74,10 @@ length back to original length. `restore` is an alias for `reinflate`.
 With `--stats`, TLS diagnostic counters can help explain why TLS packets were
 kept full, including unsynchronized traffic, TCP sequence mismatches, middle
 continuations, and minimum-savings decisions.
+
+For packet-level troubleshooting, use `--decision-log decisions.csv` together
+with `--stats` in constrict mode to record per-packet decisions and TLS state
+diagnostics.
 
 If input ends unexpectedly, PcapConstrictor preserves successfully processed
 packets, warns about the incomplete tail, prints stats when `--stats` is
@@ -102,7 +108,12 @@ app_data_continuation_keep_bytes = 8
 ;   truncate only exact final continuation packets.
 ; stream:
 ;   truncate known Application Data continuation packets when TCP/TLS stream
-;   state is clean.
+;   state is clean, and continue parsing if a known continuation ends before
+;   another visible TLS record inside the same packet.
+; bulk:
+;   include stream behavior, and for confirmed TLS directions that have
+;   already seen Application Data, truncate unsynchronized non-header bulk
+;   payload to app_data_continuation_keep_bytes.
 app_data_continuation_policy = final_only
 
 [quic]
@@ -139,9 +150,10 @@ Key settings:
   Application Data record; in `stream` mode, this also applies to known
   middle continuation packets
 - `tls.app_data_continuation_policy`: continuation handling policy;
-  `final_only` is the default conservative mode, while `stream` also truncates
-  known Application Data continuation packets when TCP/TLS stream state is
-  clean
+  `final_only` is the default conservative mode, `stream` trusts clean
+  TCP/TLS stream state for known continuation packets, and `bulk` adds a
+  fallback for confirmed out-of-order or lossy captures after Application
+  Data has already been observed
 - `quic.short_header_keep_packet_bytes`: bytes to keep from the start of an
   eligible QUIC short-header packet
 - `quic.require_dcid_match`: requires the short-header DCID to match tracked
@@ -168,7 +180,17 @@ anonymization feature.
 `tls.app_data_continuation_policy = stream` does not decrypt TLS and does not
 recover original payload bytes. It only allows stronger suffix-only truncation
 for known TLS Application Data continuation packets when TCP/TLS stream state
-is clean.
+is clean. If a known Application Data continuation ends before another visible
+TLS record in the same packet, stream mode can preserve bytes up to that
+boundary and then apply the normal AppData-start truncation rules to the next
+visible record.
+
+`tls.app_data_continuation_policy = bulk` includes all `stream` behavior. It
+also allows truncating confirmed but unsynchronized TLS bulk packets after
+Application Data has already been observed in that direction, which can help
+with out-of-order captures. This can reduce files more aggressively, but it
+also preserves fewer encrypted bytes and fewer record-boundary hints inside
+unsynchronized bulk regions.
 
 ## Current scope
 

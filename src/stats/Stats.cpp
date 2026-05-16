@@ -47,6 +47,9 @@ void print_common_stats(
         << "TLS packets state reset on seq mismatch: " << stats.tls_packets_state_reset_on_seq_mismatch << '\n'
         << "TLS packets state reset on SYN/RST: " << stats.tls_packets_state_reset_on_syn_or_rst << '\n'
         << "TLS packets truncated stream continuation: " << stats.tls_packets_truncated_stream_continuation << '\n'
+        << "TLS packets stream continuation boundary parsed: "
+        << stats.tls_packets_stream_continuation_boundary_parsed << '\n'
+        << "TLS packets truncated bulk continuation: " << stats.tls_packets_truncated_bulk_continuation << '\n'
         << "TLS AppData continuation policy: "
         << pc::config::to_string(tls_app_data_continuation_policy) << '\n'
         << "QUIC packets truncated: " << stats.quic_packets_truncated << '\n'

@@ -135,6 +135,19 @@ void run_config_parsing_tests() {
 
     {
         const auto loaded = load_config_text(
+            "tls_continuation_policy_bulk.ini",
+            "[tls]\n"
+            "app_data_continuation_policy = bulk\n"
+        );
+        pc::test::require(loaded.ok, "app_data_continuation_policy = bulk should parse");
+        pc::test::require(
+            loaded.config.tls.app_data_continuation_policy == pc::config::TlsAppDataContinuationPolicy::bulk,
+            "app_data_continuation_policy = bulk was not stored"
+        );
+    }
+
+    {
+        const auto loaded = load_config_text(
             "tls_continuation_policy_invalid.ini",
             "[tls]\n"
             "app_data_continuation_policy = aggressive\n"

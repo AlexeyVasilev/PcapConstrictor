@@ -20,6 +20,7 @@ enum class ChecksumPolicy {
 enum class TlsAppDataContinuationPolicy {
     final_only,
     stream,
+    bulk,
 };
 
 struct GeneralConfig {

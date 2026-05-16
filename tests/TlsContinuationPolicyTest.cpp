@@ -221,27 +221,27 @@ void run_tls_continuation_policy_test() {
         auto first_packet = make_packet(first_payload);
         tls.process_tcp_packet(first_packet, make_decoded(4000U, first_payload.size()), config, stats);
 
-        Payload uncertain_payload(5U, 0x55U);
-        append_bytes(uncertain_payload, Payload {0xAAU, 0xBBU, 0xCCU, 0xDDU, 0xEEU});
-        auto uncertain_packet = make_packet(uncertain_payload);
+        Payload boundary_payload(5U, 0x55U);
+        append_bytes(boundary_payload, make_tls_record(0x17U, 20U, 0x90U, 10U));
+        auto boundary_packet = make_packet(boundary_payload);
         tls.process_tcp_packet(
-            uncertain_packet,
-            make_decoded(4000U + first_payload.size(), uncertain_payload.size()),
+            boundary_packet,
+            make_decoded(4000U + first_payload.size(), boundary_payload.size()),
             config,
             stats
         );
 
         require_packet_kept_full(
-            uncertain_packet,
-            uncertain_payload,
-            "Application Data continuation ending before packet end should be kept full"
+            boundary_packet,
+            boundary_payload,
+            "final_only policy should keep full when Application Data continuation ends before visible AppData start"
         );
 
         const auto later_payload = make_tls_record(0x17U, 12U, 0x90U, 8U);
         auto later_packet = make_packet(later_payload);
         tls.process_tcp_packet(
             later_packet,
-            make_decoded(4000U + first_payload.size() + uncertain_payload.size(), later_payload.size()),
+            make_decoded(4000U + first_payload.size() + boundary_payload.size(), later_payload.size()),
             config,
             stats
         );
@@ -252,7 +252,7 @@ void run_tls_continuation_policy_test() {
         );
         pc::test::require(
             stats.tls_packets_kept_app_data_continuation_with_extra_bytes == 1U,
-            "expected state reset diagnostic when AppData continuation ends before packet end"
+            "expected state reset diagnostic in final_only boundary case"
         );
         pc::test::require(
             stats.tls_packets_resynchronized == 1U,
@@ -275,12 +275,57 @@ void run_tls_continuation_policy_test() {
         auto first_packet = make_packet(first_payload);
         tls.process_tcp_packet(first_packet, make_decoded(4500U, first_payload.size()), stream_config, stats);
 
-        Payload uncertain_payload(5U, 0x56U);
+        Payload boundary_payload(5U, 0x56U);
+        append_bytes(boundary_payload, make_tls_record(0x17U, 20U, 0x91U, 10U));
+        auto boundary_packet = make_packet(boundary_payload);
+        tls.process_tcp_packet(
+            boundary_packet,
+            make_decoded(4500U + first_payload.size(), boundary_payload.size()),
+            stream_config,
+            stats
+        );
+
+        pc::test::require(
+            boundary_packet.captured_length == 5U + stream_config.tls.app_data_keep_record_bytes,
+            "stream policy should preserve continuation bytes and truncate next visible AppData start"
+        );
+        pc::test::require(
+            stats.tls_packets_stream_continuation_boundary_parsed == 1U,
+            "stream policy should continue parsing after AppData continuation boundary"
+        );
+
+        Payload final_payload(10U, 0xA5U);
+        auto final_packet = make_packet(final_payload);
+        tls.process_tcp_packet(
+            final_packet,
+            make_decoded(4500U + first_payload.size() + boundary_payload.size(), final_payload.size()),
+            stream_config,
+            stats
+        );
+
+        pc::test::require(
+            final_packet.captured_length == stream_config.tls.app_data_continuation_keep_bytes,
+            "stream boundary parsing should keep tracking the next visible AppData record"
+        );
+    }
+
+    {
+        pc::config::Config stream_config = config;
+        stream_config.tls.app_data_continuation_policy = pc::config::TlsAppDataContinuationPolicy::stream;
+
+        pc::tls::TlsConstrictor tls {};
+        pc::stats::Stats stats {};
+
+        const auto first_payload = make_handshake_then_partial_appdata_payload(4U, 0x14U, 10U, 0x72U, 5U);
+        auto first_packet = make_packet(first_payload);
+        tls.process_tcp_packet(first_packet, make_decoded(5000U, first_payload.size()), stream_config, stats);
+
+        Payload uncertain_payload(5U, 0x57U);
         append_bytes(uncertain_payload, Payload {0xAAU, 0xBBU, 0xCCU, 0xDDU, 0xEEU});
         auto uncertain_packet = make_packet(uncertain_payload);
         tls.process_tcp_packet(
             uncertain_packet,
-            make_decoded(4500U + first_payload.size(), uncertain_payload.size()),
+            make_decoded(5000U + first_payload.size(), uncertain_payload.size()),
             stream_config,
             stats
         );
@@ -288,11 +333,25 @@ void run_tls_continuation_policy_test() {
         require_packet_kept_full(
             uncertain_packet,
             uncertain_payload,
-            "stream policy should keep full when AppData continuation ends before packet end"
+            "stream policy should keep full when parsing after continuation boundary fails"
         );
         pc::test::require(
             stats.tls_packets_kept_app_data_continuation_with_extra_bytes == 1U,
-            "stream policy should still reset state when continuation ends before packet end"
+            "stream boundary parse failure should reset state"
+        );
+
+        const auto later_payload = make_tls_record(0x17U, 12U, 0x92U, 8U);
+        auto later_packet = make_packet(later_payload);
+        tls.process_tcp_packet(
+            later_packet,
+            make_decoded(5000U + first_payload.size() + uncertain_payload.size(), later_payload.size()),
+            stream_config,
+            stats
+        );
+
+        pc::test::require(
+            later_packet.captured_length == stream_config.tls.app_data_keep_record_bytes,
+            "confirmed TLS stream should resynchronize after stream boundary parse failure"
         );
     }
 
@@ -325,6 +384,178 @@ void run_tls_continuation_policy_test() {
             "expected one AppData-start TLS resynchronization"
         );
         pc::test::require(stats.tls_packets_truncated == 1U, "expected one TLS truncation after resynchronization");
+    }
+
+    {
+        pc::tls::TlsConstrictor tls {};
+        pc::stats::Stats stats {};
+
+        const auto handshake_payload = make_tls_record(0x16U, 12U, 0x21U, 12U);
+        auto handshake_packet = make_packet(handshake_payload);
+        tls.process_tcp_packet(handshake_packet, make_decoded(5200U, handshake_payload.size()), config, stats);
+
+        const auto appdata_payload = make_tls_record(0x17U, 24U, 0xA1U, 24U);
+        auto appdata_packet = make_packet(appdata_payload);
+        tls.process_tcp_packet(
+            appdata_packet,
+            make_decoded(5200U + handshake_payload.size(), appdata_payload.size()),
+            config,
+            stats
+        );
+
+        Payload non_header_payload(20U, 0xD1U);
+        auto non_header_packet = make_packet(non_header_payload);
+        tls.process_tcp_packet(
+            non_header_packet,
+            make_decoded(9991U, non_header_payload.size()),
+            config,
+            stats
+        );
+
+        require_packet_kept_full(
+            non_header_packet,
+            non_header_payload,
+            "final_only should not bulk-truncate confirmed unsynchronized non-header payload"
+        );
+    }
+
+    {
+        pc::config::Config stream_config = config;
+        stream_config.tls.app_data_continuation_policy = pc::config::TlsAppDataContinuationPolicy::stream;
+
+        pc::tls::TlsConstrictor tls {};
+        pc::stats::Stats stats {};
+
+        const auto handshake_payload = make_tls_record(0x16U, 12U, 0x22U, 12U);
+        auto handshake_packet = make_packet(handshake_payload);
+        tls.process_tcp_packet(handshake_packet, make_decoded(5400U, handshake_payload.size()), stream_config, stats);
+
+        const auto appdata_payload = make_tls_record(0x17U, 24U, 0xA2U, 24U);
+        auto appdata_packet = make_packet(appdata_payload);
+        tls.process_tcp_packet(
+            appdata_packet,
+            make_decoded(5400U + handshake_payload.size(), appdata_payload.size()),
+            stream_config,
+            stats
+        );
+
+        Payload non_header_payload(20U, 0xD2U);
+        auto non_header_packet = make_packet(non_header_payload);
+        tls.process_tcp_packet(
+            non_header_packet,
+            make_decoded(9992U, non_header_payload.size()),
+            stream_config,
+            stats
+        );
+
+        require_packet_kept_full(
+            non_header_packet,
+            non_header_payload,
+            "stream should not bulk-truncate confirmed unsynchronized non-header payload"
+        );
+    }
+
+    {
+        pc::config::Config bulk_config = config;
+        bulk_config.tls.app_data_continuation_policy = pc::config::TlsAppDataContinuationPolicy::bulk;
+
+        pc::tls::TlsConstrictor tls {};
+        pc::stats::Stats stats {};
+
+        const auto handshake_payload = make_tls_record(0x16U, 12U, 0x23U, 12U);
+        auto handshake_packet = make_packet(handshake_payload);
+        tls.process_tcp_packet(handshake_packet, make_decoded(5600U, handshake_payload.size()), bulk_config, stats);
+
+        const auto appdata_payload = make_tls_record(0x17U, 24U, 0xA3U, 24U);
+        auto appdata_packet = make_packet(appdata_payload);
+        tls.process_tcp_packet(
+            appdata_packet,
+            make_decoded(5600U + handshake_payload.size(), appdata_payload.size()),
+            bulk_config,
+            stats
+        );
+
+        Payload non_header_payload(20U, 0xD3U);
+        auto non_header_packet = make_packet(non_header_payload);
+        tls.process_tcp_packet(
+            non_header_packet,
+            make_decoded(9993U, non_header_payload.size()),
+            bulk_config,
+            stats
+        );
+
+        pc::test::require(
+            non_header_packet.captured_length == bulk_config.tls.app_data_continuation_keep_bytes,
+            "bulk should truncate confirmed unsynchronized non-header payload after AppData was observed"
+        );
+        pc::test::require(
+            stats.tls_packets_truncated_bulk_continuation == 1U,
+            "expected one bulk continuation truncation"
+        );
+    }
+
+    {
+        pc::config::Config bulk_config = config;
+        bulk_config.tls.app_data_continuation_policy = pc::config::TlsAppDataContinuationPolicy::bulk;
+
+        pc::tls::TlsConstrictor tls {};
+        pc::stats::Stats stats {};
+
+        Payload non_header_payload(20U, 0xD4U);
+        auto non_header_packet = make_packet(non_header_payload);
+        tls.process_tcp_packet(
+            non_header_packet,
+            make_decoded(5800U, non_header_payload.size()),
+            bulk_config,
+            stats
+        );
+
+        require_packet_kept_full(
+            non_header_packet,
+            non_header_payload,
+            "bulk should not truncate unconfirmed non-header payload"
+        );
+    }
+
+    {
+        pc::config::Config bulk_config = config;
+        bulk_config.tls.app_data_continuation_policy = pc::config::TlsAppDataContinuationPolicy::bulk;
+        bulk_config.tls.app_data_keep_record_bytes = 9U;
+        bulk_config.tls.app_data_continuation_keep_bytes = 7U;
+
+        pc::tls::TlsConstrictor tls {};
+        pc::stats::Stats stats {};
+
+        const auto handshake_payload = make_tls_record(0x16U, 12U, 0x24U, 12U);
+        auto handshake_packet = make_packet(handshake_payload);
+        tls.process_tcp_packet(handshake_packet, make_decoded(6000U, handshake_payload.size()), bulk_config, stats);
+
+        const auto first_appdata_payload = make_tls_record(0x17U, 24U, 0xA4U, 24U);
+        auto first_appdata_packet = make_packet(first_appdata_payload);
+        tls.process_tcp_packet(
+            first_appdata_packet,
+            make_decoded(6000U + handshake_payload.size(), first_appdata_payload.size()),
+            bulk_config,
+            stats
+        );
+
+        const auto visible_appdata_payload = make_tls_record(0x17U, 20U, 0xB4U, 20U);
+        auto visible_appdata_packet = make_packet(visible_appdata_payload);
+        tls.process_tcp_packet(
+            visible_appdata_packet,
+            make_decoded(9994U, visible_appdata_payload.size()),
+            bulk_config,
+            stats
+        );
+
+        pc::test::require(
+            visible_appdata_packet.captured_length == bulk_config.tls.app_data_keep_record_bytes,
+            "bulk should not override normal visible-record parsing after seq mismatch"
+        );
+        pc::test::require(
+            stats.tls_packets_truncated_bulk_continuation == 0U,
+            "visible TLS header should not be counted as bulk continuation truncation"
+        );
     }
 
     {

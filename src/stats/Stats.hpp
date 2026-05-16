@@ -50,6 +50,8 @@ struct Stats {
     std::uint64_t tls_packets_state_reset_on_seq_mismatch {0};
     std::uint64_t tls_packets_state_reset_on_syn_or_rst {0};
     std::uint64_t tls_packets_truncated_stream_continuation {0};
+    std::uint64_t tls_packets_stream_continuation_boundary_parsed {0};
+    std::uint64_t tls_packets_truncated_bulk_continuation {0};
     std::uint64_t quic_packets_truncated {0};
     std::uint64_t quic_bytes_saved {0};
     std::uint64_t quic_packets_kept_uncertain {0};

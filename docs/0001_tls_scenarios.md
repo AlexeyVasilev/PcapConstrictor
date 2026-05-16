@@ -80,6 +80,7 @@ Allowed values:
 ```text
 final_only
 stream
+bulk
 ```
 
 Default:
@@ -93,10 +94,15 @@ Meaning:
 - `final_only`: conservative default; keep middle continuation packets full
   and truncate only exact final continuation packets;
 - `stream`: truncate known TLS Application Data continuation packets when
-  TCP/TLS stream state is clean.
+  TCP/TLS stream state is clean, and continue parsing visible TLS records
+  after a known Application Data continuation boundary inside the same
+  packet.
+- `bulk`: include all `stream` behavior, and for confirmed TLS directions
+  that have already seen Application Data, truncate unsynchronized
+  non-header bulk payload to `tls.app_data_continuation_keep_bytes`.
 
-This mode does not decrypt TLS and does not recover original payload bytes. It
-only allows stronger suffix-only truncation for known TLS Application Data
+Neither `stream` nor `bulk` decrypts TLS or recovers original payload bytes.
+Both only allow stronger suffix-only truncation for known TLS Application Data
 continuation packets.
 
 ### 3.4 State update rule
@@ -242,7 +248,16 @@ TCP payload lengths, not the reduced captured lengths.
 If `tls.app_data_continuation_policy = stream` is selected instead, Packets #8
 and #9 may also be truncated to `tls.app_data_continuation_keep_bytes` because
 they start inside a known TLS Application Data record and no visible TLS
-record header is present at the TCP payload start.
+record header is present at the TCP payload start. If a known continuation
+ends before another visible TLS record inside the same packet, stream mode may
+preserve bytes up to that boundary and then apply the normal AppData-start
+truncation rule to the next visible record.
+
+If `tls.app_data_continuation_policy = bulk` is selected instead, the same
+`stream` behavior applies. In addition, confirmed but unsynchronized
+directions that have already seen Application Data may still be truncated to
+`tls.app_data_continuation_keep_bytes` even when the current TCP payload does
+not start at a visible TLS record boundary.
 
 Packet #15 contains Change Cipher Spec followed by a complete TLS Application Data record:
 
